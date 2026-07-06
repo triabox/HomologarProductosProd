@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homologador CoRD ↔ VTEX · Panel principal</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --card2:#243044; --ink:#e2e8f0; --muted:#94a3b8;
+          --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --accent:#38bdf8; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:1240px; margin:0 auto; padding:24px; }
+  h1 { font-size:24px; margin:0 0 2px; }
+  h2 { font-size:17px; margin:0 0 12px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:22px; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .muted { color:var(--muted); }
+  .goals { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; }
+  .goal { background:var(--card); border-radius:14px; padding:18px; border-left:5px solid var(--muted); }
+  .goal.ok { border-color:var(--ok); } .goal.cerca { border-color:var(--warn); }
+  .goal.debajo { border-color:var(--bad); }
+  .goal .lab { font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .goal .val { font-size:34px; font-weight:800; margin:6px 0 2px; }
+  .goal .meta { font-size:12px; }
+  .badge { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; }
+  .b-ok { background:rgba(34,197,94,.16); color:var(--ok); }
+  .b-cerca { background:rgba(245,158,11,.16); color:var(--warn); }
+  .b-debajo { background:rgba(239,68,68,.16); color:var(--bad); }
+  .progress { height:8px; background:#334155; border-radius:6px; margin-top:10px; position:relative; overflow:hidden; }
+  .progress > i { display:block; height:100%; }
+  .progress > .goalmark { position:absolute; top:-3px; width:2px; height:14px; background:#fff; opacity:.6; }
+  .up { color:var(--ok); } .down { color:var(--bad); } .flat { color:var(--muted); }
+  .sec { background:var(--card); border-radius:14px; padding:20px; margin-top:24px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:9px 10px; border-bottom:1px solid #334155; }
+  th { color:var(--muted); font-weight:600; }
+  tr:hover td { background:var(--card2); }
+  td.bad { color:var(--bad); font-weight:600; } td.ok { color:var(--ok); }
+  b.ok, .txt-ok { color:var(--ok); } b.bad, .txt-bad { color:var(--bad); }
+  .cfilter { background:#0f172a; border:1px solid #334155; color:var(--muted);
+             padding:5px 10px; border-radius:8px; cursor:pointer; font-size:12px; }
+  .cfilter:hover { color:var(--ink); }
+  .cfilter.active { background:var(--accent); color:#0f172a; border-color:var(--accent); font-weight:700; }
+  .cols2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  @media (max-width:880px){ .cols2 { grid-template-columns:1fr; } }
+  .pill { padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700;
+          background:rgba(239,68,68,.16); color:var(--bad); }
+  .chip { background:#334155; color:var(--ink); padding:2px 8px; border-radius:999px; font-size:12px; }
+  .actions a { display:inline-block; margin-right:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Panel de Homologación CoRD ↔ VTEX</h1>
+
+  {% if not has_data %}
+    <div class="sub">Todavía no hay corridas. Ejecutá <code>homologador run</code>.</div>
+  {% else %}
+  <div class="sub">
+    Última corrida <b>#{{ latest_id }}</b> · {{ summary.products_compared }} productos ·
+    cobertura {{ summary.coverage_pct }}% ·
+    <a href="{{ latest_file }}">ver reporte completo →</a> ·
+    <a href="trends.html">tendencias →</a>
+  </div>
+
+  {# ---- Estado vs objetivos ---- #}
+  <div class="goals">
+    {% for f in field_status %}
+    <div class="goal {{ f.status }}">
+      <div class="lab">{{ f.label }}</div>
+      <div class="val">{{ f.value }}%</div>
+      <div class="meta">
+        {% if f.goal is not none %}
+          objetivo {{ f.goal }}% ·
+          {% if f.status == 'ok' %}<span class="badge b-ok">CUMPLE</span>
+          {% elif f.status == 'cerca' %}<span class="badge b-cerca">CERCA (−{{ f.gap }})</span>
+          {% else %}<span class="badge b-debajo">DEBAJO (−{{ f.gap }})</span>{% endif %}
+        {% endif %}
+        {% if f.delta is not none %}
+          {% if f.delta > 0 %}<span class="up">▲ +{{ f.delta }}</span>
+          {% elif f.delta < 0 %}<span class="down">▼ {{ f.delta }}</span>
+          {% else %}<span class="flat">=</span>{% endif %}
+        {% endif %}
+      </div>
+      {% if f.goal is not none %}
+      <div class="progress">
+        <i style="width:{{ f.value }}%; background:{{ 'var(--ok)' if f.status=='ok' else ('var(--warn)' if f.status=='cerca' else 'var(--bad)') }};"></i>
+        <span class="goalmark" style="left:{{ f.goal }}%"></span>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    {# ---- indicador: % de categorías con conteo de productos igual ---- #}
+    {% if count_summary and count_summary.with_counts %}
+    <div class="goal {{ count_summary.status }}">
+      <div class="lab">Conteo categorías</div>
+      <div class="val">{{ count_summary.pct }}%</div>
+      <div class="meta">
+        {% if count_summary.goal is not none %}
+          objetivo {{ count_summary.goal }}% ·
+          {% if count_summary.status == 'ok' %}<span class="badge b-ok">CUMPLE</span>
+          {% elif count_summary.status == 'cerca' %}<span class="badge b-cerca">CERCA (−{{ count_summary.gap }})</span>
+          {% else %}<span class="badge b-debajo">DEBAJO (−{{ count_summary.gap }})</span>{% endif %}
+        {% endif %}
+        {% if count_summary.delta is not none %}
+          {% if count_summary.delta > 0 %}<span class="up">▲ +{{ count_summary.delta }}</span>
+          {% elif count_summary.delta < 0 %}<span class="down">▼ {{ count_summary.delta }}</span>
+          {% else %}<span class="flat">=</span>{% endif %}
+        {% endif %}
+      </div>
+      <div class="meta muted" style="margin-top:4px;">
+        {{ count_summary.matching }}/{{ count_summary.with_counts }} iguales ·
+        {{ count_summary.anomalies }} CoRD&gt;VTEX · {{ count_summary.faltan }} faltan
+      </div>
+      {% if count_summary.goal is not none %}
+      <div class="progress">
+        <i style="width:{{ count_summary.pct }}%; background:{{ 'var(--ok)' if count_summary.status=='ok' else ('var(--warn)' if count_summary.status=='cerca' else 'var(--bad)') }};"></i>
+        <span class="goalmark" style="left:{{ count_summary.goal }}%"></span>
+      </div>
+      {% endif %}
+    </div>
+
+    {# ---- indicador en PRODUCTOS: cuántos faltan/sobran en CoRD ---- #}
+    <div class="goal {{ 'debajo' if count_summary.prod_missing_pct > 10 else ('cerca' if count_summary.prod_missing_pct > 3 else 'ok') }}">
+      <div class="lab">Productos faltantes en CoRD</div>
+      <div class="val">{{ "{:,}".format(count_summary.prod_missing) }}</div>
+      <div class="meta">
+        <span class="badge {{ 'b-debajo' if count_summary.prod_missing_pct > 10 else ('b-cerca' if count_summary.prod_missing_pct > 3 else 'b-ok') }}">
+          {{ count_summary.prod_missing_pct }}% del catálogo VTEX
+        </span>
+      </div>
+      <div class="meta muted" style="margin-top:4px;">
+        VTEX-Oechsle: {{ "{:,}".format(count_summary.total_vtex) }} ·
+        CoRD: {{ "{:,}".format(count_summary.total_cord) }} ·
+        extra en CoRD: {{ "{:,}".format(count_summary.prod_extra) }}
+      </div>
+      <div class="progress">
+        <i style="width:{{ 100 - count_summary.prod_missing_pct }}%; background:{{ 'var(--bad)' if count_summary.prod_missing_pct > 10 else ('var(--warn)' if count_summary.prod_missing_pct > 3 else 'var(--ok)') }};"></i>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ---- ¿Qué arreglar primero? — worklist priorizada por cada punto analizado ---- #}
+  <div class="sec">
+    <h2>¿Qué arreglar primero?</h2>
+    <p class="muted">
+      Lista de trabajo por cada punto analizado, ordenada de mayor a menor brecha con el objetivo.
+      Dentro de cada punto, los ítems vienen priorizados (peor primero) para procesar de arriba hacia abajo.
+    </p>
+
+    {% for w in worklists %}
+    <details class="wl" {% if loop.first and w.status != 'ok' %}open{% endif %}
+             style="margin-top:14px;border:1px solid #334155;border-radius:10px;padding:12px 14px;">
+      <summary style="cursor:pointer;font-size:15px;font-weight:700;">
+        {{ loop.index }}. {{ w.label }}
+        {% if w.status == 'ok' %}<span class="badge b-ok">CUMPLE</span>
+        {% elif w.status == 'cerca' %}<span class="badge b-cerca">CERCA</span>
+        {% else %}<span class="badge b-debajo">DEBAJO</span>{% endif %}
+        <span class="muted" style="font-weight:400;">
+          — {{ w.value }}%{% if w.goal is not none %} / meta {{ w.goal }}%{% endif %}
+          · {{ w.count }} a corregir
+        </span>
+      </summary>
+
+      {% if w.rows %}
+        {% if w.kind == 'attribute' %}
+          <table style="margin-top:10px;">
+            <thead><tr><th>#</th><th>Atributo a cargar</th><th>Productos</th><th>Categorías</th></tr></thead>
+            <tbody>
+            {% for a in w.rows %}
+              <tr><td class="muted">{{ loop.index }}</td><td>{{ a.label }}</td>
+                  <td class="bad">{{ a.products }}</td><td>{{ a.categories }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <table style="margin-top:10px;">
+            <thead><tr>
+              <th>#</th><th>SKU</th><th>Categoría</th><th>CoRD</th><th>VTEX</th>
+              <th>Detalle</th><th>Links</th>
+            </tr></thead>
+            <tbody>
+            {% for it in w.rows %}
+              <tr>
+                <td class="muted">{{ loop.index }}</td>
+                <td>{{ it.sku }}</td>
+                <td>{{ it.category_name }}</td>
+                <td class="bad">{{ it.cord_value }}</td>
+                <td class="muted">{{ it.vtex_value }}</td>
+                <td class="muted" style="font-size:12px;">{{ it.detail }}</td>
+                <td>
+                  {% if it.cord_url %}<a href="{{ it.cord_url }}" target="_blank">CoRD</a>{% endif %}
+                  {% if it.vtex_url %} · <a href="{{ it.vtex_url }}" target="_blank">VTEX</a>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        {% endif %}
+        {% if w.total_rows > w.shown %}
+          <p class="muted" style="font-size:12px;margin-top:8px;">
+            Mostrando los {{ w.shown }} más prioritarios de {{ w.total_rows }}.
+            El listado completo está en el reporte de la corrida.
+          </p>
+        {% endif %}
+      {% else %}
+        <p class="muted" style="margin-top:8px;">Nada que corregir en este punto 🎉</p>
+      {% endif %}
+    </details>
+    {% endfor %}
+  </div>
+
+  {# ---- Parte A: conteo de productos por categoría ---- #}
+  <div class="sec">
+    <h2>Conteo de productos por categoría (CoRD vs VTEX-Oechsle)</h2>
+    <p class="muted">
+      Compara el total de productos por categoría: <b>CoRD</b> (todos los suyos) vs <b>VTEX solo
+      vendidos por Oechsle</b> (sellerId 1). Pasa si son iguales. En <span class="txt-bad">rojo</span>
+      las categorías donde <b>CoRD tiene MÁS que VTEX</b> (anomalía: CoRD no debería exceder a VTEX).
+    </p>
+    {% if count_summary.with_counts %}
+    <div style="margin-bottom:12px;">
+      <span class="badge b-ok">{{ count_summary.matching }} iguales ({{ count_summary.pct }}%)</span>
+      <span class="badge b-debajo" style="margin-left:6px;">{{ count_summary.anomalies }} CoRD &gt; VTEX ⚠</span>
+      <span class="badge b-cerca" style="margin-left:6px;">{{ count_summary.faltan }} faltan en CoRD</span>
+      <span class="muted" style="margin-left:6px;">· total {{ count_summary.with_counts }}</span>
+    </div>
+    <div style="margin:10px 0; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <input id="csearch" placeholder="Buscar categoría…"
+             style="background:#0f172a;border:1px solid #334155;color:var(--ink);padding:7px 10px;border-radius:8px;min-width:220px;">
+      <span class="muted">Ver:</span>
+      <button class="cfilter" data-f="dif">Con diferencia</button>
+      <button class="cfilter" data-f="mas">CoRD &gt; VTEX</button>
+      <button class="cfilter" data-f="menos">Faltan en CoRD</button>
+      <button class="cfilter" data-f="igual">Iguales</button>
+      <button class="cfilter" data-f="todas">Todas</button>
+      <span class="muted" id="ccount"></span>
+    </div>
+    <table id="counttable">
+      <thead><tr>
+        <th>Categoría</th><th>Links</th><th>CoRD</th><th>VTEX-Oechsle</th><th>Dif.</th><th>Estado</th>
+      </tr></thead>
+      <tbody>
+      {% for c in count_categories %}
+        <tr data-dir="{{ c.direction }}" data-search="{{ c.category_name | lower }}">
+          <td>{{ c.category_name }}</td>
+          <td>
+            {% if c.cord_url %}<a href="{{ c.cord_url }}" target="_blank">CoRD</a>{% endif %}
+            {% if c.vtex_url %} · <a href="{{ c.vtex_url }}" target="_blank">VTEX</a>{% endif %}
+          </td>
+          <td>{{ c.cord if c.cord is not none else '—' }}</td>
+          <td>{{ c.vtex if c.vtex is not none else '—' }}</td>
+          <td class="{{ 'txt-bad' if c.anomaly else '' }}">{{ '+' if c.diff > 0 else '' }}{{ c.diff }}</td>
+          <td>
+            {% if c.match %}<span class="badge b-ok">= igual</span>
+            {% elif c.anomaly %}<span class="badge b-debajo">CoRD &gt; VTEX ⚠</span>
+            {% else %}<span class="badge b-cerca">faltan {{ -c.diff }} en CoRD</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<span class="muted">Sin datos de conteo todavía (corré una vez con la nueva versión).</span>{% endif %}
+  </div>
+
+  {# ---- Categorías a priorizar ---- #}
+  <div class="sec">
+    <h2>Categorías a priorizar</h2>
+    <p class="muted">
+      Ordenadas por impacto = productos afectados × distancia a los objetivos.
+      Cada celda muestra <b>% actual de la categoría</b> → <b>% global proyectado</b> si se
+      arreglan (al 100%) las categorías <u>desde la primera hasta esta fila</u> (acumulado).
+      El proyectado en verde alcanza la meta del campo.
+    </p>
+    <table>
+      <thead><tr>
+        <th>Prioridad</th><th>Categoría</th><th>Links</th><th>Productos</th>
+        {% for key in field_keys %}<th>{{ labels[key] }}<br><span class="muted" style="font-weight:400;">meta {{ goals.get(key,'—') }}%</span></th>{% endfor %}
+      </tr></thead>
+      <tbody>
+      {% for c in priority_categories %}
+        <tr>
+          <td><span class="pill">{{ c.priority }}</span></td>
+          <td>{{ c.category_name }}</td>
+          <td>
+            {% if c.cord_url %}<a href="{{ c.cord_url }}" target="_blank">CoRD</a>{% endif %}
+            {% if c.vtex_url %} · <a href="{{ c.vtex_url }}" target="_blank">VTEX</a>{% endif %}
+          </td>
+          <td>{{ c.products }}</td>
+          {% for key in field_keys %}
+            {% set v = c.field_ok.get(key) %}
+            {% set proj = c.projected.get(key) %}
+            {% set goal = goals.get(key) %}
+            <td>
+              <span class="muted">{% if v is not none %}{{ v }}%{% else %}—{% endif %}</span>
+              <span class="muted">→</span>
+              <b class="{{ 'ok' if (goal is not none and proj is not none and proj >= goal) else 'bad' }}">{% if proj is not none %}{{ proj }}%{% else %}—{% endif %}</b>
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if not priority_categories %}<span class="muted">Todas las categorías cumplen los objetivos 🎉</span>{% endif %}
+  </div>
+
+  {# ---- Historial de reportes ---- #}
+  <div class="sec">
+    <h2>Reportes ({{ history|length }})</h2>
+    <table>
+      <thead><tr>
+        <th>Corrida</th><th>Fecha</th><th>Duración</th><th>Prod/min</th><th>Productos</th>
+        <th>Score</th><th>Cobertura</th>
+        {% for key in field_keys %}<th>{{ labels[key] }}</th>{% endfor %}
+        <th></th>
+      </tr></thead>
+      <tbody>
+      {% for h in history %}
+        <tr>
+          <td>#{{ h.run_id }}</td>
+          <td>{{ h.started_at }}</td>
+          <td>{{ h.duration }}</td>
+          <td class="muted">{{ h.rate if h.rate is not none else '—' }}</td>
+          <td>{{ h.products }}</td>
+          <td>{{ h.avg_score }}</td>
+          <td>{{ h.coverage_pct }}%</td>
+          {% for key in field_keys %}
+            {% set v = h.field_ok.get(key) %}
+            {% set goal = goals.get(key) %}
+            <td class="{{ 'bad' if (goal is not none and v is not none and v < goal) else '' }}">
+              {% if v is not none %}{{ v }}%{% else %}—{% endif %}
+            </td>
+          {% endfor %}
+          <td><a href="{{ h.file }}">abrir →</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+<script>
+  // filtro de la tabla de conteo por categoría (CoRD vs VTEX-Oechsle)
+  const crows = Array.from(document.querySelectorAll('#counttable tbody tr'));
+  const csearch = document.getElementById('csearch');
+  const ccount = document.getElementById('ccount');
+  const cbtns = Array.from(document.querySelectorAll('.cfilter'));
+  let cfilter = 'dif';   // por defecto: solo las que tienen diferencia
+  function capply() {
+    const q = (csearch && csearch.value || '').trim().toLowerCase();
+    let shown = 0;
+    for (const tr of crows) {
+      const dir = tr.dataset.dir;
+      const okF = cfilter === 'todas' ? true
+                : cfilter === 'dif' ? (dir !== 'igual')
+                : dir === cfilter;
+      const okS = !q || tr.dataset.search.includes(q);
+      const vis = okF && okS;
+      tr.style.display = vis ? '' : 'none';
+      if (vis) shown++;
+    }
+    if (ccount) ccount.textContent = shown + ' categorías';
+    cbtns.forEach(b => b.classList.toggle('active', b.dataset.f === cfilter));
+  }
+  cbtns.forEach(b => b.addEventListener('click', () => { cfilter = b.dataset.f; capply(); }));
+  if (csearch) csearch.addEventListener('input', capply);
+  if (crows.length) capply();
+</script>
+</body>
+</html>

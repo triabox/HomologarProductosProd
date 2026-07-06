@@ -1,0 +1,92 @@
+# Configuración del Homologador CoRD <-> VTEX
+
+cord:
+  base_url: "https://oechsle.cord.pe"
+  oechsle_seller_id: "oechsle"   # solo se validan/cuentan productos con este vendedor en CoRD
+  # User-Agent de navegador (el entorno es no público y bloquea bots por robots.txt)
+  user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
+vtex:
+  base_url: "https://www.oechsle.pe"
+  fetch_sip_price: true       # trae el precio con tarjeta SIP/Oh (1 request extra por producto)
+  sip_payment_system: "210"   # Tarjeta Oh en el checkout de VTEX
+
+http:
+  concurrency: 8          # requests simultáneos (semáforo)
+  rate_limit_per_sec: 6   # tope de requests/seg (cortesía con los sitios)
+  timeout_sec: 25
+  max_retries: 4
+  cache_enabled: true
+  cache_ttl_sec: 86400    # 24h: cachear respuestas para acelerar re-corridas
+
+sampling:
+  per_category: 20        # mínimo de productos a comparar por categoría
+  seed: 42                # orden base determinístico/reproducible
+  rotate: true            # elegir productos DISTINTOS en cada corrida (rota por categoría).
+                          # false = siempre la misma muestra (mejor para comparar tendencias).
+
+comparators:
+  precio_venta:
+    tolerance_pct: 0.0    # el precio de venta/lista debe coincidir exacto
+  precio_promocional:
+    tolerance_pct: 1.0    # promocional sin tarjeta (tolera desfase chico de timing)
+  precio_sip:
+    tolerance_pct: 2.0    # precio con tarjeta SIP/Oh (tolera desfase de timing)
+  name:
+    fuzzy_threshold: 90   # rapidfuzz token_set_ratio mínimo para OK
+  description:
+    fuzzy_threshold: 80
+  attributes:
+    # peso de cobertura vs coincidencia de valor en el score del comparador
+    coverage_weight: 0.4
+    value_weight: 0.6
+    # auto-aprendizaje de visibilidad: si un atributo falta en CoRD, se verifica el front
+    # de VTEX; tras N confirmaciones de que VTEX tampoco lo muestra, se descarta y no se
+    # valida más (evita falsos "faltantes" por specs internas como Temporada).
+    auto_learn_visibility: true
+    visibility_threshold: 2
+    # Solo se comparan los atributos visibles para el cliente: se toman de
+    # `allSpecifications` de VTEX y se descartan estos meta-campos (no son specs de producto).
+    exclude:
+      - "Descripción Web"     # es la descripción (se compara aparte), no un atributo
+      - "Tipo de envío"
+      - "Vendido por"
+      - "Tipo de producto"
+      - "Nomenclatura"
+      - "Nombre Comercial"
+      - "Observaciones"
+      - "Sku solicitado por:"
+      - "Colección VTEX"
+      - "Coleccion VTEX"
+      - "SKU"
+      - "Ficha Técnica"
+
+# pesos para el score de homologación global (0-100) por producto
+score_weights:
+  precio_venta: 0.22
+  precio_promocional: 0.10
+  precio_sip: 0.12
+  name: 0.18
+  description: 0.13
+  attributes: 0.10
+  variants: 0.15
+
+# objetivos de exactitud por campo (% de productos OK). El dashboard principal mide
+# el avance hacia estas metas y prioriza lo que está por debajo.
+goals:
+  precio_venta: 99
+  precio_promocional: 98
+  precio_sip: 97
+  name: 95
+  description: 95
+  attributes: 90
+  variants: 95
+  category_count: 95   # % de categorías cuyo conteo de productos coincide (CoRD == VTEX-Oechsle)
+
+scheduler:
+  default_max_runtime_min: 30   # presupuesto de tiempo por corrida diaria
+
+paths:
+  db: "data/homologador.db"
+  cache_dir: "data/cache"
+  reports_dir: "reports"

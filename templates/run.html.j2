@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homologador CoRD ↔ VTEX · Corrida {{ run.id }}</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --ink:#e2e8f0; --muted:#94a3b8;
+          --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --accent:#38bdf8; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:1200px; margin:0 auto; padding:24px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; }
+  .card { background:var(--card); border-radius:12px; padding:16px; }
+  .card .k { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  .card .v { font-size:28px; font-weight:700; margin-top:6px; }
+  .delta { font-size:12px; margin-top:4px; }
+  .up { color:var(--ok); } .down { color:var(--bad); } .flat { color:var(--muted); }
+  table { width:100%; border-collapse:collapse; margin-top:14px; font-size:13px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid #334155; }
+  th { color:var(--muted); font-weight:600; position:sticky; top:0; background:var(--card); }
+  tr:hover td { background:#243044; }
+  .sec { background:var(--card); border-radius:12px; padding:16px; margin-top:22px; }
+  .sec h2 { font-size:16px; margin:0 0 6px; }
+  .pill { padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+  .p-ok { background:rgba(34,197,94,.15); color:var(--ok); }
+  .p-bad { background:rgba(239,68,68,.15); color:var(--bad); }
+  .bar { height:7px; background:#334155; border-radius:6px; overflow:hidden; min-width:70px; }
+  .bar > i { display:block; height:100%; background:var(--accent); }
+  a { color:var(--accent); }
+  .muted { color:var(--muted); }
+  .sev { display:inline-block; margin-right:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Homologador CoRD ↔ VTEX · Corrida #{{ run.id }}</h1>
+  <div class="sub">
+    Inicio {{ run.started_at }} · Fin {{ run.finished_at }} · Duración <b>{{ duration }}</b> ·
+    <a href="index.html">← panel</a> · <a href="trends.html">tendencias →</a>
+  </div>
+
+  {% macro delta_tag(d, suffix='') -%}
+    {% if d is none %}<span class="delta flat">— sin corrida previa</span>
+    {% elif d > 0 %}<span class="delta up">▲ +{{ d }}{{ suffix }}</span>
+    {% elif d < 0 %}<span class="delta down">▼ {{ d }}{{ suffix }}</span>
+    {% else %}<span class="delta flat">= 0{{ suffix }}</span>{% endif %}
+  {%- endmacro %}
+
+  <div class="cards">
+    <div class="card">
+      <div class="k">Score homologación</div>
+      <div class="v">{{ summary.avg_score }}</div>
+      {{ delta_tag(deltas.avg_score) }}
+    </div>
+    <div class="card">
+      <div class="k">Cobertura (SKU CoRD en VTEX)</div>
+      <div class="v">{{ summary.coverage_pct }}%</div>
+      {{ delta_tag(deltas.coverage_pct, '%') }}
+    </div>
+    <div class="card">
+      <div class="k">Productos comparados</div>
+      <div class="v">{{ summary.vtex_found }}</div>
+      <div class="delta flat">de {{ summary.products_compared }} muestreados</div>
+    </div>
+    <div class="card">
+      <div class="k">Categorías</div>
+      <div class="v">{{ summary.categories_done }}</div>
+    </div>
+    {% for key in field_keys %}
+    <div class="card">
+      <div class="k">{{ labels[key] }} OK</div>
+      <div class="v">{{ summary.field_ok.get(key, 0) }}%</div>
+      {{ delta_tag(deltas.field_ok.get(key), '%') }}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="sec">
+    <h2>Discrepancias por severidad</h2>
+    {% if summary.severity_counts %}
+      {% for sev, n in summary.severity_counts.items() %}
+        <span class="sev"><span class="pill p-bad">{{ sev }}</span> {{ n }}</span>
+      {% endfor %}
+    {% else %}<span class="muted">Sin discrepancias 🎉</span>{% endif %}
+  </div>
+
+  <div class="sec">
+    <h2>Por categoría</h2>
+    <table>
+      <thead><tr>
+        <th>Categoría</th><th>Links</th><th>Muestra</th><th>En VTEX</th><th>Score</th>
+        {% for key in field_keys %}<th>{{ labels[key] }} OK</th>{% endfor %}
+      </tr></thead>
+      <tbody>
+      {% for c in categories %}
+        <tr>
+          <td>{{ c.category_name }}</td>
+          <td>
+            {% if c.cord_url %}<a href="{{ c.cord_url }}" target="_blank">CoRD</a>{% endif %}
+            {% if c.vtex_url %} · <a href="{{ c.vtex_url }}" target="_blank">VTEX</a>{% endif %}
+          </td>
+          <td>{{ c.sampled }}</td>
+          <td>{{ c.vtex_found }}</td>
+          <td>
+            <div class="bar"><i style="width:{{ c.avg_score }}%"></i></div>
+            <span class="muted">{{ c.avg_score }}</span>
+          </td>
+          {% for key in field_keys %}<td>{{ c.field_ok.get(key, '—') }}{% if c.field_ok.get(key) is not none %}%{% endif %}</td>{% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="sec">
+    <h2>Atributos faltantes en CoRD</h2>
+    <p class="muted">
+      Atributos presentes en VTEX que faltan en CoRD, ordenados por cuántos productos afecta.
+      Es la lista de trabajo para completar la carga de specs.
+    </p>
+    {% if attr_missing %}
+    <table>
+      <thead><tr>
+        <th>Atributo</th><th>Productos afectados</th><th>Categorías</th><th>SKUs</th>
+      </tr></thead>
+      <tbody>
+      {% for a in attr_missing %}
+        <tr>
+          <td>{{ a.label }}</td>
+          <td><span class="pill p-bad">{{ a.products }}</span></td>
+          <td>{{ a.categories }}</td>
+          <td>
+            <details>
+              <summary class="muted" style="cursor:pointer;">ver SKUs</summary>
+              <div style="font-size:12px;margin-top:6px;line-height:1.7;">
+                {% for s in a.sku_sample %}<span class="pill"
+                   style="background:#334155;color:var(--ink);margin:2px;">{{ s }}</span>{% endfor %}
+                {% if a.sku_more %}<span class="muted">… y {{ a.sku_more }} más</span>{% endif %}
+              </div>
+            </details>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<span class="muted">Sin atributos faltantes 🎉</span>{% endif %}
+
+    {% if attr_mismatch %}
+      <h2 style="margin-top:22px;">Atributos con valor distinto</h2>
+      <p class="muted">Presentes en ambos pero con valor diferente entre CoRD y VTEX.</p>
+      <table>
+        <thead><tr><th>Atributo</th><th>Productos afectados</th><th>Categorías</th></tr></thead>
+        <tbody>
+        {% for a in attr_mismatch %}
+          <tr><td>{{ a.label }}</td>
+              <td><span class="pill p-bad">{{ a.products }}</span></td>
+              <td>{{ a.categories }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+
+  <div class="sec">
+    <h2>Detalle por producto ({{ products|length }} comparados)</h2>
+    <p class="muted">
+      Cada celda muestra <b>CoRD → VTEX</b> cuando hay diferencia. Ordenado por menor score.
+      Las celdas en verde coinciden; en rojo difieren.
+    </p>
+    <div style="margin:10px 0; display:flex; gap:14px; align-items:center; flex-wrap:wrap;">
+      <input id="search" placeholder="Buscar por SKU o categoría…"
+             style="background:#0f172a;border:1px solid #334155;color:var(--ink);
+                    padding:7px 10px;border-radius:8px;min-width:240px;">
+      <label class="muted" style="cursor:pointer;">
+        <input type="checkbox" id="onlyDiff"> mostrar solo con diferencias
+      </label>
+      <span class="muted" id="count"></span>
+    </div>
+    <table id="detail">
+      <thead><tr>
+        <th>SKU</th><th>Categoría</th><th>Score</th>
+        {% for key in field_keys %}<th>{{ labels[key] }}</th>{% endfor %}
+        <th>Links</th>
+      </tr></thead>
+      <tbody>
+      {% for p in products %}
+        <tr data-diff="{{ '1' if p.has_diff else '0' }}"
+            data-search="{{ (p.sku ~ ' ' ~ (p.category_name or '')) | lower }}">
+          <td>{{ p.sku }}</td>
+          <td>{{ p.category_name }}</td>
+          <td><span class="pill {{ 'p-ok' if p.score >= 99 else 'p-bad' }}">{{ p.score }}</span></td>
+          {% for key in field_keys %}
+            {% set f = p.fields.get(key) %}
+            {% if not f %}
+              <td class="muted">—</td>
+            {% elif f.ok %}
+              <td><span class="pill p-ok">✓</span></td>
+            {% else %}
+              <td>
+                <span class="pill p-bad">{{ f.severity }}</span>
+                {% if key == 'attributes' or key == 'description' %}
+                  <div class="muted" style="font-size:11px;margin-top:3px;">{{ f.detail }}</div>
+                {% else %}
+                  <div style="font-size:12px;margin-top:3px;">
+                    <span class="down">{{ f.cord_value }}</span> →
+                    <span class="muted">{{ f.vtex_value }}</span>
+                  </div>
+                {% endif %}
+              </td>
+            {% endif %}
+          {% endfor %}
+          <td>
+            {% if p.cord_url %}<a href="{{ p.cord_url }}" target="_blank">CoRD</a>{% endif %}
+            {% if p.vtex_url %} · <a href="{{ p.vtex_url }}" target="_blank">VTEX</a>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if not_found %}
+  <div class="sec">
+    <h2>SKU de CoRD sin equivalente en VTEX ({{ not_found|length }})</h2>
+    <p class="muted">No penalizan la homologación; se reportan para revisión.</p>
+    <table>
+      <thead><tr><th>SKU</th><th>Categoría</th><th>Link CoRD</th><th>Nota</th></tr></thead>
+      <tbody>
+      {% for p in not_found %}
+        <tr>
+          <td>{{ p.sku }}</td><td>{{ p.category_name }}</td>
+          <td>{% if p.cord_url %}<a href="{{ p.cord_url }}" target="_blank">abrir</a>{% endif %}</td>
+          <td class="muted">{{ p.error or 'no encontrado en VTEX' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+<script>
+  const rows = Array.from(document.querySelectorAll('#detail tbody tr'));
+  const search = document.getElementById('search');
+  const onlyDiff = document.getElementById('onlyDiff');
+  const count = document.getElementById('count');
+  function apply() {
+    const q = search.value.trim().toLowerCase();
+    const diffOnly = onlyDiff.checked;
+    let shown = 0;
+    for (const tr of rows) {
+      const okSearch = !q || tr.dataset.search.includes(q);
+      const okDiff = !diffOnly || tr.dataset.diff === '1';
+      const visible = okSearch && okDiff;
+      tr.style.display = visible ? '' : 'none';
+      if (visible) shown++;
+    }
+    count.textContent = shown + ' / ' + rows.length + ' productos';
+  }
+  search.addEventListener('input', apply);
+  onlyDiff.addEventListener('change', apply);
+  apply();
+</script>
+</body>
+</html>

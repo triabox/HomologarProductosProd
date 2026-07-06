@@ -1,0 +1,19 @@
+# Entorno
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# Datos generados (caché, base histórica, reportes)
+data/cache/
+data/*.db
+reports/*.html
+
+# Config local del asistente / entorno
+.claude/
+.env*
+
+# OS
+.DS_Store

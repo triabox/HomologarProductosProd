@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homologador CoRD ↔ VTEX · Tendencias</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --ink:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; padding:24px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .sec { background:var(--card); border-radius:12px; padding:18px; margin-top:20px; }
+  .sec h2 { font-size:16px; margin:0 0 10px; }
+  a { color:var(--accent); }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+  th,td { text-align:left; padding:7px 10px; border-bottom:1px solid #334155; }
+  th { color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Tendencias de homologación</h1>
+  <div class="sub">{{ points|length }} corridas registradas</div>
+
+  <div class="sec">
+    <h2>Score de homologación y cobertura por corrida</h2>
+    <canvas id="scoreChart" height="110"></canvas>
+  </div>
+
+  <div class="sec">
+    <h2>% OK por campo</h2>
+    <canvas id="fieldChart" height="110"></canvas>
+  </div>
+
+  <div class="sec">
+    <h2>Histórico</h2>
+    <table>
+      <thead><tr>
+        <th>#</th><th>Fecha</th><th>Productos</th><th>Score</th><th>Cobertura</th>
+        {% for key in field_keys %}<th>{{ labels[key] }}</th>{% endfor %}
+      </tr></thead>
+      <tbody>
+      {% for p in points %}
+        <tr>
+          <td>{{ p.run_id }}</td><td>{{ p.started_at }}</td><td>{{ p.products }}</td>
+          <td>{{ p.avg_score }}</td><td>{{ p.coverage_pct }}%</td>
+          {% for key in field_keys %}<td>{{ p.field_ok.get(key, '—') }}{% if p.field_ok.get(key) is not none %}%{% endif %}</td>{% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const POINTS = {{ points_json | safe }};
+const FIELD_KEYS = {{ field_keys | tojson }};
+const FIELD_LABELS = {{ labels | tojson }};
+const labels = POINTS.map(p => '#' + p.run_id);
+
+new Chart(document.getElementById('scoreChart'), {
+  type: 'line',
+  data: { labels, datasets: [
+    { label: 'Score', data: POINTS.map(p => p.avg_score), borderColor:'#38bdf8', tension:.3 },
+    { label: 'Cobertura %', data: POINTS.map(p => p.coverage_pct), borderColor:'#22c55e', tension:.3 },
+  ]},
+  options: { scales:{ y:{ min:0, max:100 } }, plugins:{ legend:{ labels:{ color:'#e2e8f0' } } } }
+});
+
+const palette = ['#38bdf8','#f59e0b','#22c55e','#e879f9','#fb7185','#a3e635'];
+new Chart(document.getElementById('fieldChart'), {
+  type: 'line',
+  data: { labels, datasets: FIELD_KEYS.map((k,i) => ({
+    label: FIELD_LABELS[k] || k,
+    data: POINTS.map(p => p.field_ok[k] ?? null),
+    borderColor: palette[i % palette.length], tension:.3,
+  }))},
+  options: { scales:{ y:{ min:0, max:100 } }, plugins:{ legend:{ labels:{ color:'#e2e8f0' } } } }
+});
+</script>
+</body>
+</html>
