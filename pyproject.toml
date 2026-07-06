@@ -10,7 +10,11 @@ dependencies = [
     "jinja2>=3.1",
     "tenacity>=8.0",
     "pyyaml>=6.0",
+    "openpyxl>=3.1",
 ]
+
+[project.optional-dependencies]
+pdf = ["weasyprint>=62"]
 
 [project.scripts]
 homologador = "homologador.cli:main"

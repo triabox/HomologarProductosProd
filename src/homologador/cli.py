@@ -15,6 +15,7 @@ import sys
 from .config import Config
 from .cord_scraper import CordScraper
 from .engine import Engine
+from .export import export_excel, export_pdf
 from .http import HttpClient
 from .report import render_index, render_run, render_trends
 from .scheduler import Runner, RunOptions
@@ -44,9 +45,26 @@ async def _cmd_run(args) -> int:
     render_run(cfg, storage, run_id)
     render_trends(cfg, storage)
     index = render_index(cfg, storage)
+    _export_latest(cfg, storage, index)
     storage.close()
     print(f"\nPanel principal: {index}")
     return 0
+
+
+def _export_latest(cfg: Config, storage: Storage, index_path) -> None:
+    """Genera export.xlsx (datos completos) y dashboard.pdf (formato web) del último run."""
+    last = storage.last_finished_run_id()
+    if not last:
+        return
+    out_dir = cfg.path("paths.reports_dir")
+    try:
+        export_excel(cfg, storage, last, out_dir / "export.xlsx")
+        print(f"Excel:   {out_dir / 'export.xlsx'}")
+    except Exception as e:
+        print(f"[export] Excel falló: {type(e).__name__}: {e}")
+    pdf = export_pdf(index_path, out_dir / "dashboard.pdf")
+    if pdf:
+        print(f"PDF:     {pdf}")
 
 
 async def _cmd_seed(args) -> int:
@@ -86,8 +104,29 @@ def _cmd_report(args) -> int:
     render_run(cfg, storage, run_id)
     render_trends(cfg, storage)
     index = render_index(cfg, storage)
+    _export_latest(cfg, storage, index)
     storage.close()
     print(f"Panel principal: {index}")
+    return 0
+
+
+def _cmd_export(args) -> int:
+    cfg = _cfg(args)
+    storage = Storage(cfg.path("paths.db"))
+    run_id = args.run_id or storage.last_finished_run_id()
+    if not run_id:
+        print("No hay corridas finalizadas.", file=sys.stderr)
+        return 1
+    out_dir = cfg.path("paths.reports_dir")
+    if args.format in ("xlsx", "both"):
+        p = export_excel(cfg, storage, run_id, out_dir / f"export-run-{run_id}.xlsx")
+        print(f"Excel: {p}")
+    if args.format in ("pdf", "both"):
+        index = render_index(cfg, storage)
+        p = export_pdf(index, out_dir / f"dashboard-run-{run_id}.pdf")
+        if p:
+            print(f"PDF:   {p}")
+    storage.close()
     return 0
 
 
@@ -117,6 +156,10 @@ def main(argv: list[str] | None = None) -> int:
     p_rep = sub.add_parser("report", help="regenerar dashboard/tendencias")
     p_rep.add_argument("--run-id", type=int, default=None)
 
+    p_exp = sub.add_parser("export", help="exportar resultados a Excel/PDF")
+    p_exp.add_argument("--run-id", type=int, default=None, help="corrida (default: última)")
+    p_exp.add_argument("--format", choices=["xlsx", "pdf", "both"], default="both")
+
     args = parser.parse_args(argv)
     if args.cmd == "run":
         return asyncio.run(_cmd_run(args))
@@ -124,6 +167,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_cmd_seed(args))
     if args.cmd == "report":
         return _cmd_report(args)
+    if args.cmd == "export":
+        return _cmd_export(args)
     parser.print_help()
     return 1
 
