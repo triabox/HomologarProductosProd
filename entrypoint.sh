@@ -4,13 +4,15 @@
 #
 # Env vars:
 #   PORT             puerto del dashboard (default 8080)
-#   RUN_TIME         hora local de la corrida diaria HH:MM (default 02:00)
+#   RUN_TIMES        horas locales de corrida, separadas por coma (default "02:00")
+#                    ej. "02:00,12:00" = madrugada y mediodía
+#   RUN_TIME         (compat) usado si RUN_TIMES no está definida
 #   MAX_RUNTIME_MIN  presupuesto de tiempo por corrida (default 30)
 #   RUN_ON_START     "true" = correr también al arrancar el contenedor
 set -u
 
 PORT="${PORT:-8080}"
-RUN_TIME="${RUN_TIME:-02:00}"
+RUN_TIMES="${RUN_TIMES:-${RUN_TIME:-02:00}}"
 MAX_RUNTIME_MIN="${MAX_RUNTIME_MIN:-30}"
 RUN_ON_START="${RUN_ON_START:-false}"
 
@@ -40,7 +42,7 @@ if [ ! -f reports/index.html ]; then
 HTML
 fi
 
-echo "[entrypoint] dashboard en puerto ${PORT}; corrida diaria a las ${RUN_TIME} (TZ=${TZ:-UTC})"
+echo "[entrypoint] dashboard en puerto ${PORT}; corridas diarias a las ${RUN_TIMES} (TZ=${TZ:-UTC})"
 python -m http.server "${PORT}" --directory reports &
 
 if [ "${RUN_ON_START}" = "true" ]; then
@@ -50,11 +52,23 @@ fi
 
 while :; do
   now=$(date +%s)
-  target=$(date -d "today ${RUN_TIME}" +%s)
-  if [ "${target}" -le "${now}" ]; then
-    target=$((target + 86400))
+  # próxima corrida = el horario más cercano entre todos los configurados
+  next=""
+  for t in $(echo "${RUN_TIMES}" | tr ',' ' '); do
+    target=$(date -d "today ${t}" +%s) || continue
+    if [ "${target}" -le "${now}" ]; then
+      target=$((target + 86400))
+    fi
+    if [ -z "${next}" ] || [ "${target}" -lt "${next}" ]; then
+      next=${target}
+    fi
+  done
+  if [ -z "${next}" ]; then
+    echo "[entrypoint] RUN_TIMES inválido (${RUN_TIMES}); duermo 1h"
+    sleep 3600
+    continue
   fi
-  echo "[entrypoint] próxima corrida: $(date -d "@${target}")"
-  sleep $((target - now))
+  echo "[entrypoint] próxima corrida: $(date -d "@${next}")"
+  sleep $((next - now))
   homologador run --max-runtime "${MAX_RUNTIME_MIN}" || true
 done
