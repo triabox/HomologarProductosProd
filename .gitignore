@@ -9,7 +9,7 @@ dist/
 # Datos generados (caché, base histórica, reportes)
 data/cache/
 data/*.db
-reports/*.html
+reports/*
 
 # Config local del asistente / entorno
 .claude/
