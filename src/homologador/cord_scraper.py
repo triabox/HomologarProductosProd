@@ -104,18 +104,22 @@ def parse_product_html(html: str, sku: str, url: Optional[str] = None) -> Produc
         regular = _v("regular")
         promotional = _v("promotional")
         offer = _v("offer")
-        # mapeo:
+        sip_credit = bool(pricing.get("sipCredit"))
+        # mapeo (el flag sipCredit indica si el producto participa de precio con tarjeta):
         #  - venta = regular
-        #  - con tarjeta SIP = offer si existe; si no, el promocional es el precio con tarjeta
-        #  - promocional (sin tarjeta) = promotional SOLO cuando hay offer distinto
-        #    (si offer no existe, CoRD muestra directo el precio con tarjeta, no el "sin tarjeta")
+        #  - offer > 0                  -> promo=promotional, sip=offer
+        #  - sin offer y sipCredit=true -> el promocional ES el precio con tarjeta (sip)
+        #  - sin offer y sipCredit=false-> el promocional es promo GENERAL; NO hay precio SIP
         sale_price = regular
         if offer:
             sip_price = offer
             promo_price = promotional
-        else:
+        elif sip_credit:
             sip_price = promotional or regular
             promo_price = None
+        else:
+            sip_price = None
+            promo_price = promotional
         # compat
         list_price = regular
         price = sip_price or promo_price or regular

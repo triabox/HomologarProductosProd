@@ -80,7 +80,7 @@ class PrecioSipComparator(Comparator):
         self.tol = cfg.get("comparators.precio_sip.tolerance_pct", 2.0)
 
     def compare(self, cord: Product, vtex: Product) -> FieldResult:
-        # precio final con tarjeta: CoRD offer, o promotional si no hay offer distinto
-        cord_sip = cord.sip_price if cord.sip_price is not None else cord.promo_price
-        return _compare(self.key, cord_sip, vtex.sip_price, self.tol,
+        # precio con tarjeta: solo si CoRD lo expone (sipCredit / offer);
+        # si el producto no participa de SIP, no aplica (lo resuelve _compare)
+        return _compare(self.key, cord.sip_price, vtex.sip_price, self.tol,
                         na_if_missing=True)
