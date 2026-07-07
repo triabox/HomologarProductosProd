@@ -90,17 +90,24 @@ class PrecioSipComparator(Comparator):
         self.tol = cfg.get("comparators.precio_sip.tolerance_pct", 2.0)
 
     def compare(self, cord: Product, vtex: Product) -> FieldResult:
-        # guardián: CoRD dice "sin precio SIP" pero VTEX SÍ tiene descuento real de
-        # tarjeta -> es una discrepancia (promo de tarjeta faltante en CoRD), no un N/A
-        if (cord.sip_price is None and vtex.sip_price is not None
-                and vtex.promo_price is not None
-                and vtex.sip_price < vtex.promo_price - 0.01):
-            return FieldResult(
-                field=self.key, ok=False, score=0.0, severity=Severity.PRECIO,
-                detail="CoRD sin precio SIP pero VTEX tiene descuento de tarjeta",
-                cord_value="None", vtex_value=f"{vtex.sip_price:.2f}",
+        # guardián: CoRD no expone precio de tarjeta pero en VTEX el cliente con
+        # tarjeta paga MENOS que el mejor precio de CoRD -> promo de tarjeta faltante
+        if cord.sip_price is None and vtex.sip_price is not None:
+            cord_best = min(
+                (p for p in (cord.sale_price, cord.promo_price) if p is not None),
+                default=None,
             )
-        # precio con tarjeta: solo si CoRD lo expone (sipCredit / offer);
+            has_card_discount = (vtex.promo_price is not None
+                                 and vtex.sip_price < vtex.promo_price - 0.01)
+            if (has_card_discount and cord_best is not None
+                    and vtex.sip_price < cord_best - 0.01):
+                return FieldResult(
+                    field=self.key, ok=False, score=0.0, severity=Severity.PRECIO,
+                    detail=("CoRD sin precio de tarjeta y el cliente con tarjeta paga "
+                            f"menos en VTEX (mejor CoRD {cord_best:.2f})"),
+                    cord_value="None", vtex_value=f"{vtex.sip_price:.2f}",
+                )
+        # precio con tarjeta: solo si CoRD lo expone (offer > 0);
         # si el producto no participa de SIP, no aplica (lo resuelve _compare)
         return _compare(self.key, cord.sip_price, vtex.sip_price, self.tol,
                         na_if_missing=True)
