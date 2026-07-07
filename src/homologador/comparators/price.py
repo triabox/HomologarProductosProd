@@ -17,11 +17,11 @@ def _compare(
 ) -> FieldResult:
     c, v = norm_price(cord_val), norm_price(vtex_val)
     if c is None and v is None:
-        return FieldResult(field, ok=True, score=1.0, severity=Severity.OK,
+        return FieldResult(field, ok=True, score=1.0, severity=Severity.NO_APLICA,
                            detail="sin este precio en ninguno de los dos")
     if c is None or v is None:
         if na_if_missing:
-            return FieldResult(field, ok=True, score=1.0, severity=Severity.OK,
+            return FieldResult(field, ok=True, score=1.0, severity=Severity.NO_APLICA,
                                detail="no aplica (un sistema no expone este precio)",
                                cord_value=str(c), vtex_value=str(v))
         return FieldResult(field, ok=False, score=0.0, severity=Severity.FALTANTE,
@@ -80,6 +80,16 @@ class PrecioSipComparator(Comparator):
         self.tol = cfg.get("comparators.precio_sip.tolerance_pct", 2.0)
 
     def compare(self, cord: Product, vtex: Product) -> FieldResult:
+        # guardián: CoRD dice "sin precio SIP" pero VTEX SÍ tiene descuento real de
+        # tarjeta -> es una discrepancia (promo de tarjeta faltante en CoRD), no un N/A
+        if (cord.sip_price is None and vtex.sip_price is not None
+                and vtex.promo_price is not None
+                and vtex.sip_price < vtex.promo_price - 0.01):
+            return FieldResult(
+                field=self.key, ok=False, score=0.0, severity=Severity.PRECIO,
+                detail="CoRD sin precio SIP pero VTEX tiene descuento de tarjeta",
+                cord_value="None", vtex_value=f"{vtex.sip_price:.2f}",
+            )
         # precio con tarjeta: solo si CoRD lo expone (sipCredit / offer);
         # si el producto no participa de SIP, no aplica (lo resuelve _compare)
         return _compare(self.key, cord.sip_price, vtex.sip_price, self.tol,

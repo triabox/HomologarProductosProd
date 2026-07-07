@@ -71,6 +71,7 @@ class Severity(str, Enum):
     """Tipo/severidad de discrepancia que reporta un comparador."""
 
     OK = "OK"
+    NO_APLICA = "NO_APLICA"        # el campo no existe en este producto (no cuenta en el %)
     FALTANTE = "FALTANTE"          # producto/dato ausente en uno de los lados
     PRECIO = "PRECIO"
     NOMBRE = "NOMBRE"

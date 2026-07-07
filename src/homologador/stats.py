@@ -28,8 +28,11 @@ def aggregate_category(name: str, comps: list[ProductComparison]) -> CategoryAgg
     if found:
         keys = {fr.field for c in found for fr in c.fields}
         for k in keys:
-            oks = sum(1 for c in found for fr in c.fields if fr.field == k and fr.ok)
-            field_ok[k] = round(oks / vtex_found * 100.0, 1)
+            # solo resultados comparables: NO_APLICA no cuenta ni a favor ni en contra
+            rows = [fr for c in found for fr in c.fields
+                    if fr.field == k and fr.severity.value != "NO_APLICA"]
+            if rows:
+                field_ok[k] = round(sum(1 for fr in rows if fr.ok) / len(rows) * 100.0, 1)
     return CategoryAgg(name, sampled, vtex_found, avg_score, field_ok)
 
 
@@ -39,9 +42,10 @@ class GlobalSummary:
     vtex_found: int
     coverage_pct: float            # % de SKUs de CoRD hallados en VTEX
     avg_score: float
-    field_ok: dict[str, float]     # % OK por campo
+    field_ok: dict[str, float]     # % OK por campo (solo sobre comparables)
     severity_counts: dict[str, int]
     categories_done: int
+    na_counts: dict[str, int] = field(default_factory=dict)  # "no aplica" por campo
 
 
 def global_summary(storage: Storage, run_id: int) -> GlobalSummary:
@@ -57,10 +61,15 @@ def global_summary(storage: Storage, run_id: int) -> GlobalSummary:
 
     field_ok: dict[str, float] = {}
     severity_counts: dict[str, int] = {}
+    na_counts: dict[str, int] = {}
     by_field: dict[str, list[int]] = {}
     for fr in fields:
-        by_field.setdefault(fr["field"], []).append(fr["ok"])
         sev = fr["severity"]
+        if sev == "NO_APLICA":
+            # no cuenta en el % (ni discrepancia ni acierto); se informa aparte
+            na_counts[fr["field"]] = na_counts.get(fr["field"], 0) + 1
+            continue
+        by_field.setdefault(fr["field"], []).append(fr["ok"])
         if sev != "OK":
             severity_counts[sev] = severity_counts.get(sev, 0) + 1
     for k, oks in by_field.items():
@@ -74,6 +83,7 @@ def global_summary(storage: Storage, run_id: int) -> GlobalSummary:
         field_ok=field_ok,
         severity_counts=severity_counts,
         categories_done=len(cats),
+        na_counts=na_counts,
     )
 
 

@@ -195,6 +195,7 @@ def render_index(cfg: Config, storage: Storage) -> Path:
                 "delta": deltas.field_ok.get(key),
                 "status": _status(val, goal) if goal is not None else "ok",
                 "gap": round(goal - val, 1) if goal is not None and val < goal else 0,
+                "na": summary.na_counts.get(key, 0),
             }
         )
 

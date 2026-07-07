@@ -85,6 +85,7 @@
           {% elif f.delta < 0 %}<span class="down">▼ {{ f.delta }}</span>
           {% else %}<span class="flat">=</span>{% endif %}
         {% endif %}
+        {% if f.na %}<span class="flat" title="productos donde este campo no existe; no cuentan en el %"> · N/A {{ f.na }}</span>{% endif %}
       </div>
       {% if f.goal is not none %}
       <div class="progress">

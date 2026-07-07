@@ -50,6 +50,8 @@ class Engine:
         total_w = 0.0
         acc = 0.0
         for fr in comp.fields:
+            if fr.severity.value == "NO_APLICA":
+                continue  # el campo no existe en este producto: no pondera
             w = self.weights.get(fr.field, 1.0)
             total_w += w
             acc += w * fr.score
