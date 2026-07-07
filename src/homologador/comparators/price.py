@@ -65,6 +65,16 @@ class PrecioPromocionalComparator(Comparator):
         self.tol = cfg.get("comparators.precio_promocional.tolerance_pct", 1.0)
 
     def compare(self, cord: Product, vtex: Product) -> FieldResult:
+        # guardián: CoRD muestra SOLO precio regular (sin promo ni SIP) pero VTEX
+        # vende con descuento -> promoción faltante en CoRD, no un N/A
+        if (cord.promo_price is None and cord.sip_price is None
+                and vtex.promo_price is not None and vtex.sale_price is not None
+                and vtex.promo_price < vtex.sale_price - 0.01):
+            return FieldResult(
+                field=self.key, ok=False, score=0.0, severity=Severity.PRECIO,
+                detail="CoRD sin promoción pero VTEX vende con descuento",
+                cord_value="None", vtex_value=f"{vtex.promo_price:.2f}",
+            )
         # solo cuando CoRD expone un precio sin-tarjeta distinto (offer presente)
         return _compare(self.key, cord.promo_price, vtex.promo_price, self.tol,
                         na_if_missing=True)
