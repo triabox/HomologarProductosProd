@@ -142,11 +142,14 @@ class Runner:
             total_compared = 0
             score_sum = 0.0
             cats_done = 0
-            offsets = storage.sample_offsets()  # offset de rotación por categoría
+            hit_deadline = False
 
-            for cat in categories:
+            while categories:
+              offsets = storage.sample_offsets()  # offset de rotación por categoría
+              for cat in categories:
                 if deadline and time.monotonic() >= deadline:
                     print(f"[run {run_id}] presupuesto de tiempo agotado, corte limpio")
+                    hit_deadline = True
                     break
 
                 offset = offsets.get(cat.id, 0)
@@ -183,6 +186,17 @@ class Runner:
                     f"  ✓ {cat.path_str}: {agg.sampled} muestreados, "
                     f"{agg.vtex_found} en VTEX, score {agg.avg_score}"
                 )
+
+              # ¿ciclo completado con presupuesto restante? -> reiniciar y seguir
+              if hit_deadline or not opts.resume or not deadline or opts.limit_categories:
+                  break
+              prev_done = cats_done
+              categories = self._select_categories(tree, storage, opts)
+              if categories:
+                  print(f"[run {run_id}] ciclo completado; continúa un ciclo nuevo con "
+                        f"muestras rotadas ({len(categories)} categorías)")
+              if prev_done == 0 and not categories:
+                  break  # nada procesable: evitar loop vacío
 
             avg = round(score_sum / total_compared, 2) if total_compared else 0.0
             storage.finish_run(
