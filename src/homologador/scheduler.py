@@ -190,13 +190,16 @@ class Runner:
               # ¿ciclo completado con presupuesto restante? -> reiniciar y seguir
               if hit_deadline or not opts.resume or not deadline or opts.limit_categories:
                   break
-              prev_done = cats_done
+              if cats_done == 0:
+                  # pasada completa sin UN solo producto: CoRD probablemente
+                  # inaccesible/bloqueado -> no martillar con otro ciclo vacío
+                  print(f"[run {run_id}] pasada sin productos (¿CoRD inaccesible?); "
+                        f"corto en vez de reciclar")
+                  break
               categories = self._select_categories(tree, storage, opts)
               if categories:
                   print(f"[run {run_id}] ciclo completado; continúa un ciclo nuevo con "
                         f"muestras rotadas ({len(categories)} categorías)")
-              if prev_done == 0 and not categories:
-                  break  # nada procesable: evitar loop vacío
 
             avg = round(score_sum / total_compared, 2) if total_compared else 0.0
             storage.finish_run(
