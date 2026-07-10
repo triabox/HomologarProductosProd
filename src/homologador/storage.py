@@ -354,13 +354,15 @@ class Storage:
         """
         cond = "AND run_id<?" if before_run_id is not None else ""
         params = (before_run_id,) if before_run_id is not None else ()
+        # solo observaciones COMPLETAS (ambos conteos): una lectura fallida de CoRD
+        # (cord_count NULL, ej. corridas durante caídas) no pisa a una medición real
         return self.conn.execute(
             f"""SELECT cs.* FROM category_stats cs
                 JOIN (SELECT category_name, MAX(run_id) mr FROM category_stats
-                      WHERE (cord_count IS NOT NULL OR vtex_count IS NOT NULL) {cond}
+                      WHERE cord_count IS NOT NULL AND vtex_count IS NOT NULL {cond}
                       GROUP BY category_name) t
                   ON t.category_name=cs.category_name AND t.mr=cs.run_id
-                WHERE cs.cord_count IS NOT NULL OR cs.vtex_count IS NOT NULL""",
+                WHERE cs.cord_count IS NOT NULL AND cs.vtex_count IS NOT NULL""",
             params,
         ).fetchall()
 
