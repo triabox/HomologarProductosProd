@@ -2,6 +2,10 @@
 
 cord:
   base_url: "https://oechsle.cord.pe"
+  # API REST de CoRD (desde jul-2026 el front es client-side; los datos salen de acá)
+  api_base: "https://api.cord.pe/cord-rest"
+  store_id: "d9c11ac1-cd1c-4b53-a020-d53fa934c20a"
+  application: "STOREFRONT"
   oechsle_seller_id: "oechsle"   # solo se validan/cuentan productos con este vendedor en CoRD
   # User-Agent de navegador (el entorno es no público y bloquea bots por robots.txt)
   user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
