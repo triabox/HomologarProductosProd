@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homologador · Sellers CoRD vs VTEX</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --ink:#e2e8f0; --muted:#94a3b8;
+          --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --accent:#38bdf8; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; padding:24px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  a { color:var(--accent); }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; }
+  .card { background:var(--card); border-radius:12px; padding:16px; }
+  .card .k { color:var(--muted); font-size:12px; text-transform:uppercase; }
+  .card .v { font-size:26px; font-weight:700; margin-top:6px; }
+  table { width:100%; border-collapse:collapse; margin-top:14px; font-size:13px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid #334155; }
+  th { color:var(--muted); position:sticky; top:0; background:var(--card); }
+  .sec { background:var(--card); border-radius:12px; padding:16px; margin-top:22px; }
+  .bar { height:7px; background:#334155; border-radius:6px; overflow:hidden; min-width:80px; }
+  .bar > i { display:block; height:100%; background:var(--accent); }
+  .muted { color:var(--muted); }
+  .pill { padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+  .p-new { background:rgba(56,189,248,.15); color:var(--accent); }
+  .up { color:var(--ok); font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Sellers: CoRD vs VTEX</h1>
+  <div class="sub">
+    Snapshot #{{ snapshot.id }} · {{ snapshot.taken_at }} ·
+    <a href="index.html">← panel principal</a>
+  </div>
+
+  <div class="cards">
+    <div class="card"><div class="k">Sellers en CoRD</div><div class="v">{{ rows|length }}</div></div>
+    <div class="card"><div class="k">Productos CoRD</div><div class="v">{{ "{:,}".format(total_cord) }}</div></div>
+    <div class="card"><div class="k">Productos VTEX (mismos sellers)</div><div class="v">{{ "{:,}".format(total_vtex) }}</div></div>
+    <div class="card"><div class="k">Migración global</div><div class="v">{{ coverage_global }}%</div></div>
+  </div>
+
+  <div class="sec">
+    <h2 style="font-size:16px;margin:0 0 6px;">Por seller (ordenado por tamaño en VTEX)</h2>
+    <p class="muted" style="font-size:12px;">
+      "% migrado" = productos en CoRD / productos del mismo seller en VTEX.
+      Un seller con VTEX=0 vende solo en CoRD.
+    </p>
+    <table>
+      <thead><tr>
+        <th>Seller</th><th>Productos CoRD</th><th>Δ</th><th>Productos VTEX</th>
+        <th>% migrado</th><th>Categorías CoRD</th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>{{ r.seller_name or r.seller_id }}
+              {% if r.is_new %}<span class="pill p-new">NUEVO</span>{% endif %}</td>
+          <td>{{ "{:,}".format(r.cord_products or 0) }}</td>
+          <td>{% if r.delta_cord %}<span class="up">+{{ r.delta_cord }}</span>{% else %}<span class="muted">·</span>{% endif %}</td>
+          <td>{{ "{:,}".format(r.vtex_products or 0) }}</td>
+          <td>
+            {% if r.coverage is not none %}
+              <div class="bar"><i style="width:{{ [r.coverage,100]|min }}%"></i></div>
+              <span class="muted">{{ r.coverage }}%</span>
+            {% else %}<span class="muted">solo CoRD</span>{% endif %}
+          </td>
+          <td>{{ r.cord_categories }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if snapshots|length > 1 %}
+  <div class="sec">
+    <h2 style="font-size:16px;margin:0 0 6px;">Snapshots</h2>
+    <table>
+      <thead><tr><th>#</th><th>Fecha</th><th>Sellers</th><th>Productos CoRD</th></tr></thead>
+      <tbody>
+      {% for s in snapshots|reverse %}
+        <tr><td>{{ s.id }}</td><td>{{ s.taken_at }}</td>
+            <td>{{ s.sellers_total }}</td><td>{{ "{:,}".format(s.cord_products_total or 0) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+</body>
+</html>

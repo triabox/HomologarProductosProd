@@ -78,6 +78,22 @@ CREATE TABLE IF NOT EXISTS attr_visibility (
     not_visible INTEGER DEFAULT 0, -- veces confirmado NO visible en el front de VTEX
     excluded INTEGER DEFAULT 0   -- 1 = descartado (no se valida más)
 );
+CREATE TABLE IF NOT EXISTS seller_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    taken_at TEXT NOT NULL,
+    cord_products_total INTEGER,
+    sellers_total INTEGER
+);
+CREATE TABLE IF NOT EXISTS seller_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_id INTEGER NOT NULL,
+    seller_id TEXT NOT NULL,
+    seller_name TEXT,
+    cord_products INTEGER,
+    cord_categories INTEGER,
+    vtex_products INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_sellerstats_snap ON seller_stats(snapshot_id);
 CREATE TABLE IF NOT EXISTS cursor (
     category_id TEXT PRIMARY KEY,
     category_name TEXT,
@@ -364,6 +380,40 @@ class Storage:
                   ON t.category_name=cs.category_name AND t.mr=cs.run_id
                 WHERE cs.cord_count IS NOT NULL AND cs.vtex_count IS NOT NULL""",
             params,
+        ).fetchall()
+
+    # -- auditoría de sellers ---------------------------------------------
+    def save_seller_snapshot(
+        self, taken_at: str, cord_products_total: int, rows: list[dict]
+    ) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO seller_snapshots(taken_at, cord_products_total, sellers_total) "
+            "VALUES (?,?,?)",
+            (taken_at, cord_products_total, len(rows)),
+        )
+        snap_id = int(cur.lastrowid)
+        for r in rows:
+            self.conn.execute(
+                """INSERT INTO seller_stats
+                   (snapshot_id, seller_id, seller_name, cord_products,
+                    cord_categories, vtex_products)
+                   VALUES (?,?,?,?,?,?)""",
+                (snap_id, r["seller_id"], r["seller_name"], r["cord_products"],
+                 r["cord_categories"], r["vtex_products"]),
+            )
+        self.conn.commit()
+        return snap_id
+
+    def seller_snapshots(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT * FROM seller_snapshots ORDER BY id ASC"
+        ).fetchall()
+
+    def seller_stats(self, snapshot_id: int) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT * FROM seller_stats WHERE snapshot_id=? "
+            "ORDER BY COALESCE(vtex_products,0) DESC",
+            (snapshot_id,),
         ).fetchall()
 
     def all_runs(self) -> list[sqlite3.Row]:

@@ -355,6 +355,38 @@ def render_index(cfg: Config, storage: Storage) -> Path:
     return out
 
 
+def render_sellers(cfg: Config, storage: Storage) -> Optional[Path]:
+    """Reporte de paridad de sellers CoRD vs VTEX (último snapshot + delta)."""
+    snaps = storage.seller_snapshots()
+    if not snaps:
+        return None
+    last = snaps[-1]
+    rows = [dict(r) for r in storage.seller_stats(last["id"])]
+    prev_map = {}
+    if len(snaps) > 1:
+        prev_map = {r["seller_id"]: dict(r) for r in storage.seller_stats(snaps[-2]["id"])}
+    total_cord = sum(r["cord_products"] or 0 for r in rows)
+    total_vtex = sum(r["vtex_products"] or 0 for r in rows)
+    for r in rows:
+        vp = r["vtex_products"] or 0
+        r["coverage"] = round((r["cord_products"] or 0) / vp * 100, 1) if vp else None
+        p = prev_map.get(r["seller_id"])
+        r["delta_cord"] = (r["cord_products"] or 0) - (p["cord_products"] or 0) if p else None
+        r["is_new"] = p is None and len(prev_map) > 0
+    html = _env().get_template("sellers.html.j2").render(
+        snapshot=dict(last),
+        rows=rows,
+        total_cord=total_cord,
+        total_vtex=total_vtex,
+        coverage_global=round(total_cord / total_vtex * 100, 1) if total_vtex else 0,
+        snapshots=[dict(s) for s in snaps],
+    )
+    out = cfg.path("paths.reports_dir") / "sellers.html"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+    return out
+
+
 def render_trends(cfg: Config, storage: Storage) -> Path:
     """Renderiza la página de tendencias a partir de todas las corridas finalizadas."""
     labels = Engine(cfg).comparator_labels()

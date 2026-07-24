@@ -17,7 +17,7 @@ from .cord_scraper import CordScraper
 from .engine import Engine
 from .export import export_excel, export_pdf
 from .http import HttpClient
-from .report import render_index, render_run, render_trends
+from .report import render_index, render_run, render_sellers, render_trends
 from .scheduler import Runner, RunOptions
 from .storage import Storage
 from .vtex_client import VtexClient
@@ -110,6 +110,18 @@ def _cmd_report(args) -> int:
     return 0
 
 
+async def _cmd_sellers(args) -> int:
+    from .sellers import SellersAudit
+    cfg = _cfg(args)
+    await SellersAudit(cfg).run()
+    storage = Storage(cfg.path("paths.db"))
+    out = render_sellers(cfg, storage)
+    storage.close()
+    if out:
+        print(f"Reporte sellers: {out}")
+    return 0
+
+
 def _cmd_export(args) -> int:
     cfg = _cfg(args)
     storage = Storage(cfg.path("paths.db"))
@@ -156,6 +168,8 @@ def main(argv: list[str] | None = None) -> int:
     p_rep = sub.add_parser("report", help="regenerar dashboard/tendencias")
     p_rep.add_argument("--run-id", type=int, default=None)
 
+    sub.add_parser("sellers", help="auditar sellers CoRD vs VTEX (corrida separada)")
+
     p_exp = sub.add_parser("export", help="exportar resultados a Excel/PDF")
     p_exp.add_argument("--run-id", type=int, default=None, help="corrida (default: última)")
     p_exp.add_argument("--format", choices=["xlsx", "pdf", "both"], default="both")
@@ -167,6 +181,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_cmd_seed(args))
     if args.cmd == "report":
         return _cmd_report(args)
+    if args.cmd == "sellers":
+        return asyncio.run(_cmd_sellers(args))
     if args.cmd == "export":
         return _cmd_export(args)
     parser.print_help()
