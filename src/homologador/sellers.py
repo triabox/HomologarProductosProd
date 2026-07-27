@@ -30,6 +30,9 @@ class SellersAudit:
     async def run(self) -> int:
         storage = Storage(self.cfg.path("paths.db"))
         async with HttpClient(self.cfg) as http:
+            # un snapshot debe medir SIEMPRE datos frescos: sin caché HTTP
+            # (con caché, dos snapshots dentro del TTL salen idénticos)
+            http.cache_enabled = False
             api = CordApi(self.cfg, http)
             vtex = VtexClient(self.cfg, http)
 
