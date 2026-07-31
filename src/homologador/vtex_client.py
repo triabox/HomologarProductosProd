@@ -115,8 +115,16 @@ class VtexClient:
             return None
         return {norm_label(m.group(1).strip()) for m in _FRONT_SPEC_RE.finditer(html)}
 
-    async def get_by_ean(self, ean: str, prefer_seller: Optional[str] = None) -> Optional[Product]:
-        """Busca por código de barras (matching para productos de sellers)."""
+    async def get_by_ean(
+        self, ean: str, prefer_seller: Optional[str] = None,
+        expected_name: Optional[str] = None,
+    ) -> Optional[Product]:
+        """Busca por código de barras (matching para productos de sellers).
+
+        Un mismo EAN puede estar asignado a VARIOS productos en VTEX (sellers cargan
+        EANs erróneos). Si se pasa `expected_name`, se elige el candidato con el nombre
+        más parecido y se exige una similitud mínima; si ninguno la alcanza, no hay match.
+        """
         if not ean:
             return None
         url = f"{self.base}/api/catalog_system/pub/products/search?fq=alternateIds_Ean:{ean}"
@@ -129,7 +137,22 @@ class VtexClient:
             return None
         if not data:
             return None
+
         p = data[0]
+        if expected_name and len(data) >= 1:
+            from rapidfuzz import fuzz
+            from .normalize import norm_text
+            threshold = self.cfg.get("matching.name_verify_threshold", 55)
+            scored = sorted(
+                ((fuzz.token_set_ratio(norm_text(expected_name),
+                                       norm_text(c.get("productName") or "")), c)
+                 for c in data),
+                key=lambda x: -x[0],
+            )
+            best_score, p = scored[0]
+            if best_score < threshold:
+                return None  # ningún candidato del EAN se parece: EAN mal asignado
+
         product = self._parse(p, str(p.get("productId")), prefer_seller=prefer_seller)
         await self._attach_sip(product, p, prefer_seller)
         return product

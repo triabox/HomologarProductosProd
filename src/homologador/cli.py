@@ -94,7 +94,9 @@ async def _cmd_seed(args) -> int:
         vc = VtexClient(cfg, http)
         if prov.get("matching") == "ean":
             prefer = cord.seller if prov.get("vtex_seller") == "*" else prov.get("vtex_seller")
-            vtex = await vc.get_by_ean(cord.ean, prefer_seller=prefer) if cord.ean else None
+            vtex = (await vc.get_by_ean(cord.ean, prefer_seller=prefer,
+                                        expected_name=cord.name)
+                    if cord.ean else None)
             if vtex is None:
                 from .cord_scraper import permalink_from_url
                 vtex = await vc.get_by_slug(permalink_from_url(url), prefer_seller=prefer)

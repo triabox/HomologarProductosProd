@@ -23,6 +23,11 @@ http:
   cache_enabled: true
   cache_ttl_sec: 86400    # 24h: cachear respuestas para acelerar re-corridas
 
+# verificación de matching por EAN: similitud mínima de nombre para aceptar el
+# candidato (los sellers cargan EANs erróneos en VTEX; ver caso MG3731 vs HC3505)
+matching:
+  name_verify_threshold: 55
+
 sampling:
   per_category: 20        # mínimo de productos a comparar por categoría
   seed: 42                # orden base determinístico/reproducible

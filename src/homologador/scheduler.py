@@ -336,9 +336,11 @@ class Runner:
         prefer = dp.seller if self.vtex_seller == "*" else self.vtex_seller
         if self.matching == "product_id":
             return await vtex.get_by_sku(dp.sku)
-        # estrategia ean: EAN del descubrimiento o del detalle; fallback por slug
+        # estrategia ean: EAN del descubrimiento o del detalle (verificado por nombre,
+        # porque hay EANs mal asignados en VTEX); fallback determinístico por slug
         ean = dp.ean or getattr(cord, "ean", None)
-        p = await vtex.get_by_ean(ean, prefer_seller=prefer) if ean else None
+        p = (await vtex.get_by_ean(ean, prefer_seller=prefer, expected_name=cord.name)
+             if ean else None)
         if p is None:
             from .cord_scraper import permalink_from_url
             p = await vtex.get_by_slug(permalink_from_url(dp.url), prefer_seller=prefer)
