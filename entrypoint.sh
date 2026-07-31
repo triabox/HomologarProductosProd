@@ -48,6 +48,9 @@ python -m http.server "${PORT}" --directory reports &
 if [ "${RUN_ON_START}" = "true" ]; then
   echo "[entrypoint] RUN_ON_START: corrida inicial de ${MAX_RUNTIME_MIN} min"
   homologador run --max-runtime "${MAX_RUNTIME_MIN}" || true
+  homologador --provider plazavea run --max-runtime "${PV_RUNTIME_MIN:-10}" || true
+  homologador --provider marketplace run --max-runtime "${MP_RUNTIME_MIN:-10}" || true
+  homologador sellers || true
 fi
 
 while :; do
