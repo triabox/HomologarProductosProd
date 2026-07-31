@@ -34,6 +34,8 @@ class Product:
     attributes: dict[str, str] = field(default_factory=dict)
     # SKUs de las variantes del producto (colores/tallas/etc.)
     variant_skus: list[str] = field(default_factory=list)
+    ean: Optional[str] = None      # código de barras (llave de matching para sellers)
+    seller: Optional[str] = None   # sellerId del producto
 
     @property
     def exists(self) -> bool:
@@ -65,6 +67,7 @@ class DiscoveredProduct:
     category_id: str
     category_name: str
     seller: Optional[str] = None   # sellerId de CoRD (ej. "oechsle", "plazavea")
+    ean: Optional[str] = None      # para matching por EAN (sellers no-OE)
 
 
 class Severity(str, Enum):

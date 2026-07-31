@@ -39,3 +39,28 @@ class Config:
             raise KeyError(f"path no configurado: {dotted}")
         p = Path(rel)
         return p if p.is_absolute() else (self.root / p)
+
+    # -- proveedores (pistas de validación separadas) ----------------------
+    provider_name: str = "oechsle"
+
+    def apply_provider(self, name: str) -> "Config":
+        """Activa una pista de proveedor: aísla base de datos y reportes.
+
+        `oechsle` (default) mantiene las rutas históricas (data/homologador.db,
+        reports/); el resto usa data/homologador-<p>.db y reports/<p>/.
+        """
+        providers = self.get("providers") or {}
+        if name not in providers:
+            raise KeyError(f"provider desconocido: {name} (config: {list(providers)})")
+        self.provider_name = name
+        if name != "oechsle":
+            self._data.setdefault("paths", {})
+            self._data["paths"]["db"] = f"data/homologador-{name}.db"
+            self._data["paths"]["reports_dir"] = f"reports/{name}"
+        return self
+
+    @property
+    def provider(self) -> dict:
+        return (self.get("providers") or {}).get(self.provider_name) or {
+            "sellers": ["oechsle"], "matching": "product_id", "vtex_seller": "1",
+        }

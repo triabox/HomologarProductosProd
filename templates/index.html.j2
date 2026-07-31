@@ -53,7 +53,17 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Panel de Homologación CoRD ↔ VTEX</h1>
+  <h1>Panel de Homologación CoRD ↔ VTEX{% if provider and provider != 'oechsle' %} — {{ {'plazavea':'Plaza Vea','marketplace':'Marketplace (3P)'}.get(provider, provider) }}{% endif %}</h1>
+  <div class="sub" style="margin-bottom:6px;">
+    Pistas:
+    {% if provider == 'oechsle' or not provider %}
+      <b>Oechsle</b> · <a href="plazavea/index.html">Plaza Vea →</a> · <a href="marketplace/index.html">Marketplace →</a>
+    {% else %}
+      <a href="../index.html">← Oechsle</a> ·
+      {% if provider == 'plazavea' %}<b>Plaza Vea</b> · <a href="../marketplace/index.html">Marketplace →</a>
+      {% else %}<a href="../plazavea/index.html">Plaza Vea</a> · <b>Marketplace</b>{% endif %}
+    {% endif %}
+  </div>
 
   {% if not has_data %}
     <div class="sub">Todavía no hay corridas. Ejecutá <code>homologador run</code>.</div>

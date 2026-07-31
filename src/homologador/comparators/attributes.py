@@ -37,9 +37,10 @@ class AttributesComparator(Comparator):
         # mapa label-normalizada -> label original de VTEX, para mostrar nombres legibles
         v_orig = {norm_label(k): k for k in vtex.attributes}
         if not v:
+            # VTEX no expone atributos: no hay contra qué validar -> no aplica
             return FieldResult(
-                field=self.key, ok=False, score=0.0, severity=Severity.FALTANTE,
-                detail="VTEX no tiene atributos para comparar",
+                field=self.key, ok=True, score=1.0, severity=Severity.NO_APLICA,
+                detail="VTEX sin atributos para comparar",
                 cord_value=str(len(c)), vtex_value="0",
             )
 

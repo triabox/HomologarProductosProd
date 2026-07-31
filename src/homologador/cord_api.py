@@ -133,6 +133,7 @@ class CordApi:
 
         permalink = (p.get("seo") or {}).get("permalink") or ""
         available = (seller.get("availableUnits") or 0) > 0
+        ean = str(sku0.get("ean")) if sku0.get("ean") not in (None, "", "0", 0) else None
 
         return Product(
             sku=str(sku),
@@ -152,6 +153,8 @@ class CordApi:
             available=available,
             attributes=attributes,
             variant_skus=[str(s.get("skuId")) for s in (p.get("skus") or []) if s.get("skuId")],
+            ean=ean,
+            seller=seller.get("sellerId"),
         )
 
     def item_to_discovered(self, item: dict, category: Category) -> Optional[DiscoveredProduct]:
@@ -160,11 +163,14 @@ class CordApi:
         permalink = (item.get("seo") or {}).get("permalink")
         if not pid or not permalink:
             return None
-        seller = (self._sku_entry(item).get("seller") or {}).get("sellerId")
+        sku0 = self._sku_entry(item)
+        seller = (sku0.get("seller") or {}).get("sellerId")
+        ean = str(sku0.get("ean")) if sku0.get("ean") not in (None, "", "0", 0) else None
         return DiscoveredProduct(
             sku=str(pid),
             url=f"{self.site}/{permalink}/p",
             category_id=category.id,
             category_name=category.name,
             seller=seller,
+            ean=ean,
         )

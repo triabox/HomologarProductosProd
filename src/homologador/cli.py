@@ -26,7 +26,11 @@ _SKU_RE = re.compile(r"-(\d{5,})/p")
 
 
 def _cfg(args) -> Config:
-    return Config.load(args.config)
+    cfg = Config.load(args.config)
+    provider = getattr(args, "provider", None)
+    if provider:
+        cfg.apply_provider(provider)
+    return cfg
 
 
 async def _cmd_run(args) -> int:
@@ -72,9 +76,14 @@ async def _cmd_seed(args) -> int:
     url = args.url
     sku = args.sku or (_SKU_RE.search(url).group(1) if _SKU_RE.search(url) else None)
     if not sku:
+        # productos de sellers: sin id numérico en la URL; usar el permalink como id
+        from .cord_scraper import permalink_from_url
+        sku = permalink_from_url(url) or ""
+    if not sku:
         print("No se pudo determinar el SKU; pasá --sku.", file=sys.stderr)
         return 2
     eng = Engine(cfg)
+    prov = cfg.provider
     async with HttpClient(cfg) as http:
         if args.no_cache:
             http.cache_enabled = False
@@ -82,7 +91,15 @@ async def _cmd_seed(args) -> int:
         if cord is None:
             print(f"No se pudo scrapear CoRD: {url}", file=sys.stderr)
             return 1
-        vtex = await VtexClient(cfg, http).get_by_sku(sku)
+        vc = VtexClient(cfg, http)
+        if prov.get("matching") == "ean":
+            prefer = cord.seller if prov.get("vtex_seller") == "*" else prov.get("vtex_seller")
+            vtex = await vc.get_by_ean(cord.ean, prefer_seller=prefer) if cord.ean else None
+            if vtex is None:
+                from .cord_scraper import permalink_from_url
+                vtex = await vc.get_by_slug(permalink_from_url(url), prefer_seller=prefer)
+        else:
+            vtex = await vc.get_by_sku(sku)
     comp = eng.compare(sku, cord, vtex, cord_url=url)
     print(f"\nSKU {sku} · {cord.name}")
     print(f"vtex_found={comp.vtex_found} · SCORE={comp.score}\n")
@@ -145,6 +162,9 @@ def _cmd_export(args) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="homologador", description=__doc__)
     parser.add_argument("--config", default=None, help="ruta a config.yaml")
+    parser.add_argument("--provider", default=None,
+                        choices=["oechsle", "plazavea", "marketplace"],
+                        help="pista de validación (default: oechsle)")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_run = sub.add_parser("run", help="corrida de homologación + reporte")

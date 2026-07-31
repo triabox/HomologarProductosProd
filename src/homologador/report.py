@@ -336,6 +336,7 @@ def render_index(cfg: Config, storage: Storage) -> Path:
 
     html = _env().get_template("index.html.j2").render(
         has_data=True,
+        provider=cfg.provider_name,
         labels=labels,
         field_keys=list(labels.keys()),
         goals=goals,

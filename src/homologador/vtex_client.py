@@ -115,11 +115,65 @@ class VtexClient:
             return None
         return {norm_label(m.group(1).strip()) for m in _FRONT_SPEC_RE.finditer(html)}
 
-    async def _sip_price(self, item_id: str) -> Optional[float]:
+    async def get_by_ean(self, ean: str, prefer_seller: Optional[str] = None) -> Optional[Product]:
+        """Busca por código de barras (matching para productos de sellers)."""
+        if not ean:
+            return None
+        url = f"{self.base}/api/catalog_system/pub/products/search?fq=alternateIds_Ean:{ean}"
+        text = await self.http.get_text(url)
+        if not text:
+            return None
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        if not data:
+            return None
+        p = data[0]
+        product = self._parse(p, str(p.get("productId")), prefer_seller=prefer_seller)
+        await self._attach_sip(product, p, prefer_seller)
+        return product
+
+    async def get_by_slug(self, permalink: str, prefer_seller: Optional[str] = None) -> Optional[Product]:
+        """Fallback determinístico: busca por texto y matchea linkText == permalink+'-<id>'.
+
+        El linkText de VTEX es exactamente el permalink de CoRD + '-' + productId
+        (misma fuente de slugs), así que la igualdad de slug-sin-id identifica el producto.
+        """
+        if not permalink:
+            return None
+        words = permalink.replace("-", " ")
+        url = (f"{self.base}/api/catalog_system/pub/products/search"
+               f"?ft={words}&_from=0&_to=15")
+        text = await self.http.get_text(url)
+        if not text:
+            return None
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        for p in data or []:
+            link = p.get("linkText") or ""
+            base = re.sub(r"-\d+$", "", link)
+            if base == permalink:
+                product = self._parse(p, str(p.get("productId")), prefer_seller=prefer_seller)
+                await self._attach_sip(product, p, prefer_seller)
+                return product
+        return None
+
+    async def _attach_sip(self, product: Product, p: dict, prefer_seller: Optional[str]) -> None:
+        if self.fetch_sip:
+            item = self._pick_item(p.get("items", []), product.sku)
+            if item and item.get("itemId"):
+                product.sip_price = await self._sip_price(
+                    item["itemId"], seller=prefer_seller or "1"
+                )
+
+    async def _sip_price(self, item_id: str, seller: str = "1") -> Optional[float]:
         """Precio con tarjeta SIP/Oh vía simulación de checkout con el medio de pago."""
         url = f"{self.base}/api/checkout/pub/orderForms/simulation?sc=1"
         payload = {
-            "items": [{"id": str(item_id), "quantity": 1, "seller": "1"}],
+            "items": [{"id": str(item_id), "quantity": 1, "seller": str(seller)}],
             "country": "PER",
             "paymentData": {"payments": [{
                 "paymentSystem": self.sip_payment_system,
@@ -151,12 +205,22 @@ class VtexClient:
                 return it
         return items[0]
 
-    def _parse(self, p: dict, sku: str) -> Product:
+    @staticmethod
+    def _pick_seller(item: dict, prefer_seller: Optional[str]) -> dict:
+        """Oferta del seller preferido (mismo vendedor que en CoRD); si no está, la primera."""
+        sellers = item.get("sellers") or [{}]
+        if prefer_seller:
+            for s in sellers:
+                if str(s.get("sellerId", "")).lower() == str(prefer_seller).lower():
+                    return s
+        return sellers[0]
+
+    def _parse(self, p: dict, sku: str, prefer_seller: Optional[str] = None) -> Product:
         item = self._pick_item(p.get("items", []), sku)
         price = list_price = None
         available = None
         if item:
-            offer = (item.get("sellers") or [{}])[0].get("commertialOffer", {})
+            offer = self._pick_seller(item, prefer_seller).get("commertialOffer", {})
             price = offer.get("Price")
             list_price = offer.get("ListPrice")
             available = (offer.get("AvailableQuantity", 0) or 0) > 0

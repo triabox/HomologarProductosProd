@@ -75,6 +75,27 @@ score_weights:
   attributes: 0.10
   variants: 0.15
 
+# Pistas de validación por proveedor (corridas separadas, mismos comparadores):
+#  - sellers / sellers_exclude: qué sellerIds de CoRD valida esta pista
+#  - matching: product_id (número de la URL) | ean (con fallback por slug)
+#  - vtex_seller: contra qué oferta de VTEX comparar precios ("*" = el mismo seller
+#    del producto). También se usa en la simulación del precio SIP y en conteos.
+# Cada provider no-default usa su propia base (data/homologador-<p>.db) y sus
+# reportes en reports/<p>/.
+providers:
+  oechsle:
+    sellers: ["oechsle"]
+    matching: product_id
+    vtex_seller: "1"
+  plazavea:
+    sellers: ["plazavea"]
+    matching: ean
+    vtex_seller: "plazavea"
+  marketplace:
+    sellers_exclude: ["oechsle", "plazavea"]
+    matching: ean
+    vtex_seller: "*"
+
 # objetivos de exactitud por campo (% de productos OK). El dashboard principal mide
 # el avance hacia estas metas y prioriza lo que está por debajo.
 goals:

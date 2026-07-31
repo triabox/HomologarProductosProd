@@ -47,22 +47,33 @@ class Runner:
         self.cfg = cfg
         self.engine = Engine(cfg)
         self.sampler = Sampler(cfg)
-        self.oechsle_id = str(cfg.get("cord.oechsle_seller_id", "oechsle")).lower()
+        prov = cfg.provider
+        self.provider_name = cfg.provider_name
+        self._sellers = {s.lower() for s in (prov.get("sellers") or [])}
+        self._sellers_exclude = {s.lower() for s in (prov.get("sellers_exclude") or [])}
+        self.matching = prov.get("matching", "product_id")
+        self.vtex_seller = prov.get("vtex_seller")  # "1", "plazavea", "*" (el del producto)
 
-    def _is_oechsle(self, dp: DiscoveredProduct) -> bool:
-        return (dp.seller or "").lower() == self.oechsle_id
+    def _seller_matches(self, seller: str) -> bool:
+        s = (seller or "").lower()
+        if self._sellers:
+            return s in self._sellers
+        return bool(s) and s not in self._sellers_exclude
 
-    def _oechsle_count(self, cord_total: "int | None", ssr_sellers: list[str]) -> "int | None":
-        """Estima el total de productos de Oechsle en CoRD = total x ratio Oechsle del SSR.
-        Exacto en categorías homogéneas (todo un vendedor)."""
+    def _accepts(self, dp: DiscoveredProduct) -> bool:
+        """¿El producto pertenece a la pista de este proveedor?"""
+        return self._seller_matches(dp.seller or "")
+
+    def _provider_count(self, cord_total: "int | None", sellers: list[str]) -> "int | None":
+        """Estima el total del proveedor en CoRD = total x ratio del proveedor en la página."""
         if cord_total is None:
             return None
         if cord_total == 0:
             return 0
-        if not ssr_sellers:
+        if not sellers:
             return None  # no se pudo determinar el vendedor
-        oe = sum(1 for s in ssr_sellers if s.lower() == self.oechsle_id)
-        return round(cord_total * oe / len(ssr_sellers))
+        mine = sum(1 for s in sellers if self._seller_matches(s))
+        return round(cord_total * mine / len(sellers))
 
     @staticmethod
     def _finalize(storage: Storage, run_id: int) -> None:
@@ -246,8 +257,8 @@ class Runner:
 
         async def one(cat: Category):
             _, cord_total, ssr_sellers = await discovery.discover_category(cat)
-            vtex_count = await vtex.category_count(cat.id_path)
-            return cat, self._oechsle_count(cord_total, ssr_sellers), vtex_count
+            vtex_count = await self._vtex_category_count(vtex, cat)
+            return cat, self._provider_count(cord_total, ssr_sellers), vtex_count
 
         done = matched = anomalies = 0
         CHUNK = 16
@@ -285,13 +296,13 @@ class Runner:
         offset: int = 0,
     ) -> tuple[list[ProductComparison], int, "int | None", "int | None"]:
         discovered, cord_total, ssr_sellers = await discovery.discover_category(cat)
-        vtex_count = await vtex.category_count(cat.id_path)
-        cord_count = self._oechsle_count(cord_total, ssr_sellers)  # solo Oechsle
-        # validar solo los productos vendidos por Oechsle
-        oechsle = [p for p in discovered if self._is_oechsle(p)]
-        if not oechsle:
+        vtex_count = await self._vtex_category_count(vtex, cat)
+        cord_count = self._provider_count(cord_total, ssr_sellers)
+        # validar solo los productos del proveedor de esta pista
+        mine = [p for p in discovered if self._accepts(p)]
+        if not mine:
             return [], 0, cord_count, vtex_count
-        sample = self.sampler.sample(oechsle, offset)
+        sample = self.sampler.sample(mine, offset)
 
         async def one(dp: DiscoveredProduct) -> ProductComparison:
             try:
@@ -303,7 +314,7 @@ class Runner:
                         error="no se pudo scrapear CoRD",
                     )
                 cord.category_name = cord.category_name or cat.name
-                vtex_p = await vtex.get_by_sku(dp.sku)
+                vtex_p = await self._vtex_lookup(vtex, dp, cord)
                 comp = self.engine.compare(dp.sku, cord, vtex_p, cord_url=dp.url)
                 if self._auto_learn and vtex_p is not None:
                     await self._learn_visibility(comp, vtex_p, vtex, storage)
@@ -318,7 +329,26 @@ class Runner:
         for comp in comps:
             storage.save_comparison(run_id, comp)
         storage.conn.commit()
-        return list(comps), len(oechsle), cord_count, vtex_count
+        return list(comps), len(mine), cord_count, vtex_count
+
+    async def _vtex_lookup(self, vtex: VtexClient, dp: DiscoveredProduct, cord):
+        """Busca el par en VTEX según la estrategia del proveedor."""
+        prefer = dp.seller if self.vtex_seller == "*" else self.vtex_seller
+        if self.matching == "product_id":
+            return await vtex.get_by_sku(dp.sku)
+        # estrategia ean: EAN del descubrimiento o del detalle; fallback por slug
+        ean = dp.ean or getattr(cord, "ean", None)
+        p = await vtex.get_by_ean(ean, prefer_seller=prefer) if ean else None
+        if p is None:
+            from .cord_scraper import permalink_from_url
+            p = await vtex.get_by_slug(permalink_from_url(dp.url), prefer_seller=prefer)
+        return p
+
+    async def _vtex_category_count(self, vtex: VtexClient, cat: Category):
+        """Conteo VTEX de la categoría para el seller del proveedor (None si no aplica)."""
+        if not self.vtex_seller or self.vtex_seller == "*":
+            return None  # marketplace: sin conteo agregable por un solo seller
+        return await vtex.category_count(cat.id_path, seller=self.vtex_seller)
 
     async def _learn_visibility(self, comp, vtex_p, vtex, storage) -> None:
         """Si faltan atributos en CoRD, verifica el front de VTEX y aprende a descartar

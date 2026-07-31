@@ -71,6 +71,9 @@ while :; do
   echo "[entrypoint] próxima corrida: $(date -d "@${next}")"
   sleep $((next - now))
   homologador run --max-runtime "${MAX_RUNTIME_MIN}" || true
+  # pistas separadas por proveedor (misma comparación, muestras aleatorias)
+  homologador --provider plazavea run --max-runtime "${PV_RUNTIME_MIN:-10}" || true
+  homologador --provider marketplace run --max-runtime "${MP_RUNTIME_MIN:-10}" || true
   # corrida separada: auditoría de sellers CoRD vs VTEX
   homologador sellers || true
 done

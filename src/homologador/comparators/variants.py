@@ -28,6 +28,18 @@ class VariantsComparator(Comparator):
                 cord_value=str(len(cord_set)), vtex_value="0",
             )
 
+        # sellers: los skuIds de CoRD son internos (no comparables con los de VTEX);
+        # si no hay NINGUNA intersección, comparar por CANTIDAD de variantes
+        if cord_set and vtex_set and not (cord_set & vtex_set):
+            ok = len(cord_set) == len(vtex_set)
+            score = min(len(cord_set), len(vtex_set)) / max(len(cord_set), len(vtex_set))
+            return FieldResult(
+                field=self.key, ok=ok, score=round(score, 4),
+                severity=Severity.OK if ok else Severity.VARIANTE,
+                detail=f"por cantidad (IDs no comparables): CoRD {len(cord_set)} / VTEX {len(vtex_set)}",
+                cord_value=str(len(cord_set)), vtex_value=str(len(vtex_set)),
+            )
+
         union = vtex_set | cord_set
         covered = len(vtex_set & cord_set)
         missing = sorted(vtex_set - cord_set)
