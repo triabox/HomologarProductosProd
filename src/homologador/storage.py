@@ -295,6 +295,14 @@ class Storage:
             (run_id, field),
         ).fetchone()["n"]
 
+    def field_comparables(self, run_id: int, field: str) -> int:
+        """Cantidad de resultados comparables (excluye NO_APLICA) de un campo."""
+        return self.conn.execute(
+            "SELECT COUNT(*) n FROM field_results "
+            "WHERE run_id=? AND field=? AND severity != 'NO_APLICA'",
+            (run_id, field),
+        ).fetchone()["n"]
+
     # -- visibilidad aprendida de atributos (front de VTEX) --------------
     def get_excluded_labels(self) -> set[str]:
         """Labels normalizadas descartadas (no visibles en el front de VTEX)."""

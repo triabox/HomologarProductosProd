@@ -87,7 +87,9 @@
       <div class="meta">
         {% if f.goal is not none %}
           objetivo {{ f.goal }}% ·
-          {% if f.status == 'ok' %}<span class="badge b-ok">CUMPLE</span>
+          {% if f.small_sample and f.comparables is not none %}
+            <span class="badge b-cerca" title="pocos productos comparables: % poco representativo">MUESTRA CHICA ({{ f.comparables }})</span>
+          {% elif f.status == 'ok' %}<span class="badge b-ok">CUMPLE</span>
           {% elif f.status == 'cerca' %}<span class="badge b-cerca">CERCA (−{{ f.gap }})</span>
           {% else %}<span class="badge b-debajo">DEBAJO (−{{ f.gap }})</span>{% endif %}
         {% endif %}
@@ -171,11 +173,12 @@
              style="margin-top:14px;border:1px solid #334155;border-radius:10px;padding:12px 14px;">
       <summary style="cursor:pointer;font-size:15px;font-weight:700;">
         {{ loop.index }}. {{ w.label }}
-        {% if w.status == 'ok' %}<span class="badge b-ok">CUMPLE</span>
+        {% if w.small_sample and w.comparables is not none %}<span class="badge b-cerca">MUESTRA CHICA</span>
+        {% elif w.status == 'ok' %}<span class="badge b-ok">CUMPLE</span>
         {% elif w.status == 'cerca' %}<span class="badge b-cerca">CERCA</span>
         {% else %}<span class="badge b-debajo">DEBAJO</span>{% endif %}
         <span class="muted" style="font-weight:400;">
-          — {{ w.value }}%{% if w.goal is not none %} / meta {{ w.goal }}%{% endif %}
+          — {{ w.value }}%{% if w.comparables is not none %} de {{ w.comparables }} comparables{% endif %}{% if w.goal is not none %} / meta {{ w.goal }}%{% endif %}
           · {{ w.count }} a corregir
         </span>
       </summary>
