@@ -46,10 +46,13 @@ echo "[entrypoint] dashboard en puerto ${PORT}; corridas diarias a las ${RUN_TIM
 homologador serve --port "${PORT}" &
 
 if [ "${RUN_ON_START}" = "true" ]; then
-  echo "[entrypoint] RUN_ON_START: corrida inicial de ${MAX_RUNTIME_MIN} min"
-  homologador run --max-runtime "${MAX_RUNTIME_MIN}" || true
-  homologador --provider plazavea run --max-runtime "${PV_RUNTIME_MIN:-10}" || true
-  homologador --provider marketplace run --max-runtime "${MP_RUNTIME_MIN:-10}" || true
+  # corrida de arranque CORTA (BOOT_RUNTIME_MIN) para que los paneles tengan datos
+  # rápido tras un deploy; las corridas programadas hacen el trabajo pesado
+  BOOT="${BOOT_RUNTIME_MIN:-8}"
+  echo "[entrypoint] RUN_ON_START: corridas de arranque de ${BOOT} min por pista"
+  homologador run --max-runtime "${BOOT}" || true
+  homologador --provider plazavea run --max-runtime "${BOOT}" || true
+  homologador --provider marketplace run --max-runtime "${BOOT}" || true
   homologador sellers || true
 fi
 
