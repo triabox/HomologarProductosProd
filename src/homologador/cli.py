@@ -192,6 +192,9 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("sellers", help="auditar sellers CoRD vs VTEX (corrida separada)")
 
+    p_srv = sub.add_parser("serve", help="servir el dashboard con corridas a demanda")
+    p_srv.add_argument("--port", type=int, default=int(__import__("os").environ.get("PORT", 8080)))
+
     p_exp = sub.add_parser("export", help="exportar resultados a Excel/PDF")
     p_exp.add_argument("--run-id", type=int, default=None, help="corrida (default: última)")
     p_exp.add_argument("--format", choices=["xlsx", "pdf", "both"], default="both")
@@ -205,6 +208,11 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_report(args)
     if args.cmd == "sellers":
         return asyncio.run(_cmd_sellers(args))
+    if args.cmd == "serve":
+        from .webserver import main as serve_main
+        cfg = _cfg(args)
+        serve_main(args.port, str(cfg.path("paths.reports_dir")))
+        return 0
     if args.cmd == "export":
         return _cmd_export(args)
     parser.print_help()

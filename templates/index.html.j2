@@ -68,6 +68,24 @@
   {% if not has_data %}
     <div class="sub">Todavía no hay corridas. Ejecutá <code>homologador run</code>.</div>
   {% else %}
+  <div class="sub" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <button id="runBtn" style="background:#0ea5e9;color:#fff;border:0;border-radius:8px;
+            padding:6px 14px;font-weight:700;cursor:pointer;">▶ Correr ahora</button>
+    <select id="runProv" style="background:#0f172a;border:1px solid #334155;color:var(--ink);border-radius:8px;padding:5px;">
+      <option value="oechsle" {{ 'selected' if provider in (None,'oechsle') }}>Oechsle</option>
+      <option value="plazavea" {{ 'selected' if provider=='plazavea' }}>Plaza Vea</option>
+      <option value="marketplace" {{ 'selected' if provider=='marketplace' }}>Marketplace</option>
+      <option value="todo">Todas + sellers</option>
+      <option value="sellers">Solo sellers</option>
+    </select>
+    <select id="runMin" style="background:#0f172a;border:1px solid #334155;color:var(--ink);border-radius:8px;padding:5px;">
+      <option value="10">10 min</option>
+      <option value="15" selected>15 min</option>
+      <option value="30">30 min</option>
+      <option value="60">60 min</option>
+    </select>
+    <span id="runStatus" class="muted"></span>
+  </div>
   <div class="sub">
     Última corrida <b>#{{ latest_id }}</b> · {{ summary.products_compared }} productos ·
     cobertura {{ summary.coverage_pct }}% ·
@@ -386,6 +404,40 @@
   cbtns.forEach(b => b.addEventListener('click', () => { cfilter = b.dataset.f; capply(); }));
   if (csearch) csearch.addEventListener('input', capply);
   if (crows.length) capply();
+
+  // ---- corridas a demanda ----
+  (function(){
+    const btn=document.getElementById('runBtn'), st=document.getElementById('runStatus');
+    if(!btn) return;
+    function token(ask){
+      let t=localStorage.getItem('runToken');
+      if(!t || ask){ t=prompt('Token de corrida (RUN_TOKEN):', t||''); if(t) localStorage.setItem('runToken', t); }
+      return t;
+    }
+    let wasRunning=false;
+    async function poll(){
+      try{
+        const r=await fetch('/run/status'); const s=await r.json();
+        if(s.running){ wasRunning=true; btn.disabled=true;
+          st.textContent='⏳ corriendo: '+s.running+' (desde '+(s.started_at||'')+')'; }
+        else{ btn.disabled=false;
+          if(wasRunning){ st.textContent='✔ corrida finalizada, recargando…'; setTimeout(()=>location.reload(), 2500); }
+        }
+      }catch(e){}
+    }
+    setInterval(poll, 15000); poll();
+    btn.addEventListener('click', async ()=>{
+      const t=token(false); if(!t) return;
+      const prov=document.getElementById('runProv').value;
+      const min=document.getElementById('runMin').value;
+      btn.disabled=true; st.textContent='lanzando…';
+      const r=await fetch('/run?token='+encodeURIComponent(t)+'&provider='+prov+'&minutes='+min, {method:'POST'});
+      const d=await r.json().catch(()=>({}));
+      if(r.status===401){ st.textContent='token inválido'; localStorage.removeItem('runToken'); btn.disabled=false; token(true); }
+      else if(!r.ok){ st.textContent='⚠ '+(d.error||r.status); btn.disabled=false; }
+      else { wasRunning=true; st.textContent='⏳ corriendo: '+d.provider+' ('+d.minutes+' min)…'; }
+    });
+  })();
 </script>
 </body>
 </html>

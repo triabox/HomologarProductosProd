@@ -43,7 +43,7 @@ HTML
 fi
 
 echo "[entrypoint] dashboard en puerto ${PORT}; corridas diarias a las ${RUN_TIMES} (TZ=${TZ:-UTC})"
-python -m http.server "${PORT}" --directory reports &
+homologador serve --port "${PORT}" &
 
 if [ "${RUN_ON_START}" = "true" ]; then
   echo "[entrypoint] RUN_ON_START: corrida inicial de ${MAX_RUNTIME_MIN} min"
