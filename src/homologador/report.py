@@ -339,9 +339,35 @@ def render_index(cfg: Config, storage: Storage) -> Path:
         "delta": round(pct - prev_pct, 1) if prev_pct is not None else None,
     }
 
+    # resumen de Top Ventas si el proceso local corrió (en prod no existe y se omite)
+    topventas = None
+    tv_db = cfg.root / "data" / "homologador-topventas.db"
+    if cfg.provider_name == "oechsle" and tv_db.exists():
+        import sqlite3 as _sq
+        _c = _sq.connect(tv_db)
+        try:
+            row = _c.execute(
+                """WITH last AS (SELECT c.*, ROW_NUMBER() OVER
+                     (PARTITION BY c.sku ORDER BY c.checked_at DESC) rn FROM checks c)
+                   SELECT COUNT(DISTINCT l.sku) ver,
+                          SUM(CASE WHEN l.published=1 THEN 1 ELSE 0 END) pub,
+                          SUM(CASE WHEN l.published=0 THEN 1 ELSE 0 END) miss
+                   FROM last l WHERE l.rn=1"""
+            ).fetchone()
+            total = _c.execute("SELECT COUNT(*) FROM skus").fetchone()[0]
+            if row and row[0]:
+                topventas = {
+                    "verified": row[0], "total": total,
+                    "pub_pct": round((row[1] or 0) / row[0] * 100, 1),
+                    "missing": row[2] or 0,
+                }
+        finally:
+            _c.close()
+
     html = _env().get_template("index.html.j2").render(
         has_data=True,
         provider=cfg.provider_name,
+        topventas=topventas,
         labels=labels,
         field_keys=list(labels.keys()),
         goals=goals,

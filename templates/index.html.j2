@@ -92,6 +92,7 @@
     <a href="{{ latest_file }}">ver reporte completo →</a> ·
     <a href="trends.html">tendencias →</a> ·
     <a href="sellers.html">sellers →</a> ·
+    {% if topventas %}<a href="topventas.html">top ventas →</a> ·{% endif %}
     <a href="export.xlsx" download>⬇ Excel</a> ·
     <a href="dashboard.pdf" download>⬇ PDF</a>
   </div>
@@ -156,6 +157,21 @@
       </div>
       {% endif %}
     </div>
+
+    {# ---- Top Ventas (proceso local): publicación de los SKUs que venden ---- #}
+    {% if topventas %}
+    <div class="goal {{ 'debajo' if topventas.pub_pct < 90 else 'ok' }}">
+      <div class="lab"><a href="topventas.html" style="color:inherit;">Top Ventas publicados</a></div>
+      <div class="val">{{ topventas.pub_pct }}%</div>
+      <div class="meta">
+        <span class="badge {{ 'b-debajo' if topventas.missing else 'b-ok' }}">{{ topventas.missing }} faltantes</span>
+      </div>
+      <div class="meta muted" style="margin-top:4px;">
+        verificados {{ topventas.verified }}/{{ "{:,}".format(topventas.total) }} del listado 90% venta ·
+        <a href="topventas.html">ver detalle →</a>
+      </div>
+    </div>
+    {% endif %}
 
     {# ---- indicador en PRODUCTOS: cuántos faltan/sobran en CoRD ---- #}
     <div class="goal {{ 'debajo' if count_summary.prod_missing_pct > 10 else ('cerca' if count_summary.prod_missing_pct > 3 else 'ok') }}">
