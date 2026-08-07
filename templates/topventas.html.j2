@@ -69,6 +69,44 @@
     </table>
   </div>
 
+  <div class="sec">
+    <h2>✅ Top de venta que SÍ están publicados ({{ published|length }})</h2>
+    <input id="pubSearch" placeholder="Buscar por SKU, nombre o seller…"
+           style="background:#0f172a;border:1px solid #334155;color:var(--ink);
+                  padding:7px 10px;border-radius:8px;min-width:280px;margin:6px 0;">
+    <span class="muted" id="pubCount"></span>
+    <div style="max-height:420px;overflow-y:auto;">
+    <table id="pubTable">
+      <thead><tr><th>Rank</th><th>SKU</th><th>Producto</th><th>Pista</th><th>Seller hallado</th><th>Stock</th><th>Link</th></tr></thead>
+      <tbody>
+      {% for r in published %}
+        <tr data-s="{{ (r.sku ~ ' ' ~ (r.name or '') ~ ' ' ~ (r.found_seller or '') ~ ' ' ~ r.track) | lower }}">
+          <td><span class="pill p-ok">#{{ r.rank }}</span></td>
+          <td>{{ r.sku }}</td>
+          <td>{{ r.name }}</td>
+          <td>{{ r.track }}</td>
+          <td>{{ r.found_seller }}</td>
+          <td>{% if r.in_stock %}<span class="pill p-ok">sí</span>{% else %}<span class="pill p-warn">sin stock</span>{% endif %}</td>
+          <td>{% if r.cord_url %}<a href="{{ r.cord_url }}" target="_blank">CoRD</a>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  <script>
+    (function(){
+      const inp=document.getElementById('pubSearch'), rows=Array.from(document.querySelectorAll('#pubTable tbody tr')),
+            cnt=document.getElementById('pubCount');
+      function apply(){
+        const q=inp.value.trim().toLowerCase(); let n=0;
+        rows.forEach(tr=>{ const v=!q||tr.dataset.s.includes(q); tr.style.display=v?'':'none'; if(v)n++; });
+        cnt.textContent=n+' / '+rows.length;
+      }
+      inp.addEventListener('input', apply); apply();
+    })();
+  </script>
+
   {% if no_stock %}
   <div class="sec">
     <h2>⚠ Publicados pero SIN stock ({{ no_stock|length }})</h2>

@@ -257,11 +257,17 @@ class TopVentas:
             FROM skus s JOIN last l ON l.sku=s.sku AND l.rn=1
             WHERE l.published=1 AND l.in_stock=0 ORDER BY s.rank"""
         )]
+        published = [dict(x) for x in db.execute(
+            LAST + """
+            SELECT s.rank, s.sku, s.name, s.track, l.found_seller, l.in_stock, l.cord_url
+            FROM skus s JOIN last l ON l.sku=s.sku AND l.rn=1
+            WHERE l.published=1 ORDER BY s.rank"""
+        )]
         total_skus = db.execute("SELECT COUNT(*) FROM skus").fetchone()[0]
         html = env.get_template("topventas.html.j2").render(
             total_skus=total_skus,
             generated_at=time.strftime("%Y-%m-%d %H:%M"),
-            tracks=tracks, missing=missing, no_stock=no_stock,
+            tracks=tracks, missing=missing, no_stock=no_stock, published=published,
         )
         out = self.cfg.root / "reports" / "topventas.html"
         out.parent.mkdir(parents=True, exist_ok=True)
