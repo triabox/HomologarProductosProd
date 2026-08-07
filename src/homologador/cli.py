@@ -192,6 +192,8 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("sellers", help="auditar sellers CoRD vs VTEX (corrida separada)")
 
+    sub.add_parser("topventas", help="verificar publicación en CoRD de los SKUs top de venta (solo local)")
+
     p_srv = sub.add_parser("serve", help="servir el dashboard con corridas a demanda")
     p_srv.add_argument("--port", type=int, default=int(__import__("os").environ.get("PORT", 8080)))
 
@@ -208,6 +210,9 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_report(args)
     if args.cmd == "sellers":
         return asyncio.run(_cmd_sellers(args))
+    if args.cmd == "topventas":
+        from .topventas import TopVentas
+        return asyncio.run(TopVentas(_cfg(args)).run()) or 0
     if args.cmd == "serve":
         from .webserver import main as serve_main
         cfg = _cfg(args)

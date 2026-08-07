@@ -6,9 +6,8 @@ __pycache__/
 build/
 dist/
 
-# Datos generados (caché, base histórica, reportes)
-data/cache/
-data/*.db
+# Datos generados y datos de negocio locales (NUNCA subir)
+data/
 reports/*
 
 # Config local del asistente / entorno
