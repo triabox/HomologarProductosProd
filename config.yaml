@@ -100,6 +100,9 @@ providers:
     sellers_exclude: ["oechsle", "plazavea"]
     matching: ean
     vtex_seller: "*"
+    # conteo VTEX por categoría: suma de estos valores del filtro "Vendido por"
+    # (specificationFilter_4664) — cubre todos los 3P de una sola vez
+    vtex_count_spec: ["Marketplace", "Promart"]
 
 # objetivos de exactitud por campo (% de productos OK). El dashboard principal mide
 # el avance hacia estas metas y prioriza lo que está por debajo.

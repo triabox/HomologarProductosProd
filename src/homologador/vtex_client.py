@@ -77,6 +77,18 @@ class VtexClient:
         )
         return await self.http.get_count(url)
 
+    async def category_count_spec(self, id_path: list[str], value: str) -> Optional[int]:
+        """Total de la categoría filtrando por el spec "Vendido por" (ej. Marketplace)."""
+        if not id_path:
+            return None
+        spec = self.cfg.get("vtex.vendido_por_filter", "specificationFilter_4664")
+        path = "/".join(id_path)
+        url = (
+            f"{self.base}/api/catalog_system/pub/products/search"
+            f"?fq=C:/{path}/&fq={spec}:{value}&_from=0&_to=0"
+        )
+        return await self.http.get_count(url)
+
     async def get_by_sku(self, sku: str) -> Optional[Product]:
         """Busca un producto por el identificador de la URL (productId), con fallback a skuId.
 

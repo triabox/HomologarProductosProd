@@ -53,6 +53,7 @@ class Runner:
         self._sellers_exclude = {s.lower() for s in (prov.get("sellers_exclude") or [])}
         self.matching = prov.get("matching", "product_id")
         self.vtex_seller = prov.get("vtex_seller")  # "1", "plazavea", "*" (el del producto)
+        self.vtex_count_spec = prov.get("vtex_count_spec")  # valores de "Vendido por" a sumar
 
     def _seller_matches(self, seller: str) -> bool:
         s = (seller or "").lower()
@@ -347,9 +348,21 @@ class Runner:
         return p
 
     async def _vtex_category_count(self, vtex: VtexClient, cat: Category):
-        """Conteo VTEX de la categoría para el seller del proveedor (None si no aplica)."""
+        """Conteo VTEX de la categoría según el proveedor.
+
+        - seller único (OE "1", plazavea): fq=sellerId
+        - marketplace: suma de los valores configurados del filtro "Vendido por"
+          (Marketplace + Promart), que agrupan a todos los 3P en un request por valor
+        """
+        if self.vtex_count_spec:
+            total = None
+            for value in self.vtex_count_spec:
+                n = await vtex.category_count_spec(cat.id_path, value)
+                if n is not None:
+                    total = (total or 0) + n
+            return total
         if not self.vtex_seller or self.vtex_seller == "*":
-            return None  # marketplace: sin conteo agregable por un solo seller
+            return None
         return await vtex.category_count(cat.id_path, seller=self.vtex_seller)
 
     async def _learn_visibility(self, comp, vtex_p, vtex, storage) -> None:
