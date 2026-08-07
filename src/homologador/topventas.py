@@ -194,6 +194,7 @@ class TopVentas:
                 if done % 60 == 0:
                     print(f"[topventas]   {done}/{len(sample)} verificados")
 
+        self.render_report(db)
         # resumen por pista (última verificación de cada SKU)
         print("\n[topventas] estado acumulado por pista:")
         for r in db.execute(
@@ -215,3 +216,55 @@ class TopVentas:
             print(f"  {r['track']:12} verificados {ver}/{r['total']} · "
                   f"publicados {pub} ({pct}) · sin stock {r['sin_stock'] or 0}")
         db.close()
+
+    # -- reporte HTML -------------------------------------------------------
+    def render_report(self, db: sqlite3.Connection) -> Path:
+        from jinja2 import Environment, FileSystemLoader, select_autoescape
+        env = Environment(
+            loader=FileSystemLoader(str(self.cfg.root / "templates")),
+            autoescape=select_autoescape(["html"]),
+        )
+        LAST = """WITH last AS (
+            SELECT c.*, ROW_NUMBER() OVER (PARTITION BY c.sku ORDER BY c.checked_at DESC) rn
+            FROM checks c)"""
+        labels = {"oechsle": "Oechsle", "plazavea": "Plaza Vea", "marketplace": "Marketplace"}
+        tracks = []
+        for r in db.execute(
+            LAST + """
+            SELECT s.track, COUNT(DISTINCT s.sku) total, COUNT(DISTINCT l.sku) verified,
+                   SUM(CASE WHEN l.published=1 THEN 1 ELSE 0 END) pub,
+                   SUM(CASE WHEN l.published=1 AND l.in_stock=0 THEN 1 ELSE 0 END) ns
+            FROM skus s LEFT JOIN last l ON l.sku=s.sku AND l.rn=1
+            GROUP BY s.track"""
+        ):
+            ver = r["verified"] or 0
+            tracks.append({
+                "label": labels.get(r["track"], r["track"]),
+                "total": r["total"], "verified": ver,
+                "cov_pct": round(ver / r["total"] * 100, 1) if r["total"] else 0,
+                "pub_pct": round((r["pub"] or 0) / ver * 100, 1) if ver else 0,
+                "no_stock": r["ns"] or 0,
+            })
+        missing = [dict(x) for x in db.execute(
+            LAST + """
+            SELECT s.rank, s.sku, s.name, s.seller, s.track, l.checked_at
+            FROM skus s JOIN last l ON l.sku=s.sku AND l.rn=1
+            WHERE l.published=0 ORDER BY s.rank"""
+        )]
+        no_stock = [dict(x) for x in db.execute(
+            LAST + """
+            SELECT s.rank, s.sku, s.name, l.found_seller, l.cord_url
+            FROM skus s JOIN last l ON l.sku=s.sku AND l.rn=1
+            WHERE l.published=1 AND l.in_stock=0 ORDER BY s.rank"""
+        )]
+        total_skus = db.execute("SELECT COUNT(*) FROM skus").fetchone()[0]
+        html = env.get_template("topventas.html.j2").render(
+            total_skus=total_skus,
+            generated_at=time.strftime("%Y-%m-%d %H:%M"),
+            tracks=tracks, missing=missing, no_stock=no_stock,
+        )
+        out = self.cfg.root / "reports" / "topventas.html"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(html, encoding="utf-8")
+        print(f"[topventas] reporte: {out}")
+        return out

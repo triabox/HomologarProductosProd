@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Top Ventas · publicación en CoRD</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --ink:#e2e8f0; --muted:#94a3b8;
+          --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --accent:#38bdf8; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:1150px; margin:0 auto; padding:24px; }
+  h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:16px; margin:0 0 8px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  a { color:var(--accent); }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; }
+  .card { background:var(--card); border-radius:12px; padding:16px; }
+  .card .k { color:var(--muted); font-size:12px; text-transform:uppercase; }
+  .card .v { font-size:26px; font-weight:700; margin-top:6px; }
+  .card .m { font-size:12px; color:var(--muted); margin-top:4px; }
+  table { width:100%; border-collapse:collapse; margin-top:12px; font-size:13px; }
+  th,td { text-align:left; padding:7px 10px; border-bottom:1px solid #334155; }
+  th { color:var(--muted); position:sticky; top:0; background:var(--card); }
+  .sec { background:var(--card); border-radius:12px; padding:16px; margin-top:22px; }
+  .muted { color:var(--muted); }
+  .pill { padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; }
+  .p-bad { background:rgba(239,68,68,.15); color:var(--bad); }
+  .p-warn { background:rgba(245,158,11,.15); color:var(--warn); }
+  .p-ok { background:rgba(34,197,94,.15); color:var(--ok); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Top Ventas — ¿están publicados en CoRD?</h1>
+  <div class="sub">
+    Listado del 90% de la venta (6 meses) · {{ total_skus }} SKUs · generado {{ generated_at }} ·
+    proceso local (el listado no se publica)
+  </div>
+
+  <div class="cards">
+    {% for t in tracks %}
+    <div class="card">
+      <div class="k">{{ t.label }}</div>
+      <div class="v">{{ t.pub_pct }}% publicados</div>
+      <div class="m">verificados {{ t.verified }}/{{ t.total }} ({{ t.cov_pct }}% del listado)
+        · sin stock {{ t.no_stock }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="sec">
+    <h2>🚨 Top de venta NO publicados en CoRD ({{ missing|length }})</h2>
+    <p class="muted">Ordenados por ranking de venta (los primeros son los más vendidos ausentes).</p>
+    <table>
+      <thead><tr><th>Rank</th><th>SKU</th><th>Producto</th><th>Seller</th><th>Pista</th><th>Verificado</th></tr></thead>
+      <tbody>
+      {% for r in missing %}
+        <tr>
+          <td><span class="pill p-bad">#{{ r.rank }}</span></td>
+          <td>{{ r.sku }}</td>
+          <td>{{ r.name }}</td>
+          <td>{{ r.seller }}</td>
+          <td>{{ r.track }}</td>
+          <td class="muted">{{ r.checked_at[:10] }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if no_stock %}
+  <div class="sec">
+    <h2>⚠ Publicados pero SIN stock ({{ no_stock|length }})</h2>
+    <table>
+      <thead><tr><th>Rank</th><th>SKU</th><th>Producto</th><th>Seller hallado</th><th>Link</th></tr></thead>
+      <tbody>
+      {% for r in no_stock %}
+        <tr>
+          <td><span class="pill p-warn">#{{ r.rank }}</span></td>
+          <td>{{ r.sku }}</td>
+          <td>{{ r.name }}</td>
+          <td>{{ r.found_seller }}</td>
+          <td>{% if r.cord_url %}<a href="{{ r.cord_url }}" target="_blank">CoRD</a>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+</body>
+</html>
