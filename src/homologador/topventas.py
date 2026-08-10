@@ -43,10 +43,17 @@ CREATE TABLE IF NOT EXISTS checks (
     in_stock INTEGER,
     found_name TEXT,
     found_seller TEXT,
-    cord_url TEXT
+    cord_url TEXT,
+    vtex_published INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_checks_sku ON checks(sku);
 """
+
+
+def _migrate(db: sqlite3.Connection) -> None:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(checks)")}
+    if "vtex_published" not in cols:
+        db.execute("ALTER TABLE checks ADD COLUMN vtex_published INTEGER")
 
 
 def _track(seller: str) -> str:
@@ -117,10 +124,29 @@ class TopVentas:
         return picked
 
     # -- verificación de un SKU -------------------------------------------
+    async def _vtex_published(self, api: CordApi, sku: str) -> int:
+        """¿El SKU está publicado HOY en VTEX? (productos de temporada salen del catálogo)."""
+        import json as _json
+        base = self.cfg.get("vtex.base_url").rstrip("/")
+        for field in ("skuId", "productId"):
+            text = await api.http.get_text(
+                f"{base}/api/catalog_system/pub/products/search?fq={field}:{sku}"
+            )
+            if text:
+                try:
+                    if _json.loads(text):
+                        return 1
+                except _json.JSONDecodeError:
+                    pass
+        return 0
+
     async def _check(self, api: CordApi, row: sqlite3.Row) -> dict:
         sku, name, track = row["sku"], row["name"] or "", row["track"]
         result = {"sku": sku, "published": 0, "in_stock": None,
-                  "found_name": None, "found_seller": None, "cord_url": None}
+                  "found_name": None, "found_seller": None, "cord_url": None,
+                  "vtex_published": None}
+        # 1º: ¿sigue publicado en VTEX? (si no, no cuenta como faltante de CoRD)
+        result["vtex_published"] = await self._vtex_published(api, sku)
 
         async def search(q: str, size: int = 8):
             data = await api._get(f"/search/v3/products?q={q}&size={size}")
@@ -168,6 +194,7 @@ class TopVentas:
         db = sqlite3.connect(self.db_path)
         db.row_factory = sqlite3.Row
         db.executescript(_SCHEMA)
+        _migrate(db)
         total = self._load_skus(db)
         sample = self._pick_sample(db)
         print(f"[topventas] listado: {total} SKUs · muestra de esta corrida: {len(sample)}")
@@ -185,9 +212,11 @@ class TopVentas:
                 for r in results:
                     db.execute(
                         "INSERT INTO checks(sku, checked_at, published, in_stock, "
-                        "found_name, found_seller, cord_url) VALUES (?,?,?,?,?,?,?)",
+                        "found_name, found_seller, cord_url, vtex_published) "
+                        "VALUES (?,?,?,?,?,?,?,?)",
                         (r["sku"], now, r["published"], r["in_stock"],
-                         r["found_name"], r["found_seller"], r["cord_url"]),
+                         r["found_name"], r["found_seller"], r["cord_url"],
+                         r["vtex_published"]),
                     )
                 db.commit()
                 done += len(results)
@@ -245,11 +274,21 @@ class TopVentas:
                 "pub_pct": round((r["pub"] or 0) / ver * 100, 1) if ver else 0,
                 "no_stock": r["ns"] or 0,
             })
+        # FALTANTE real = está en VTEX (o aún sin verificar VTEX) y no en CoRD
         missing = [dict(x) for x in db.execute(
             LAST + """
             SELECT s.rank, s.sku, s.name, s.seller, s.track, l.checked_at
             FROM skus s JOIN last l ON l.sku=s.sku AND l.rn=1
-            WHERE l.published=0 ORDER BY s.rank"""
+            WHERE l.published=0 AND (l.vtex_published IS NULL OR l.vtex_published=1)
+            ORDER BY s.rank"""
+        )]
+        # no está en VTEX (temporada/descontinuado): informativo, NO es error
+        not_in_vtex = [dict(x) for x in db.execute(
+            LAST + """
+            SELECT s.rank, s.sku, s.name, s.seller, s.track,
+                   l.published AS cord_published
+            FROM skus s JOIN last l ON l.sku=s.sku AND l.rn=1
+            WHERE l.vtex_published=0 ORDER BY s.rank"""
         )]
         no_stock = [dict(x) for x in db.execute(
             LAST + """
@@ -268,6 +307,7 @@ class TopVentas:
             total_skus=total_skus,
             generated_at=time.strftime("%Y-%m-%d %H:%M"),
             tracks=tracks, missing=missing, no_stock=no_stock, published=published,
+            not_in_vtex=not_in_vtex,
         )
         out = self.cfg.root / "reports" / "topventas.html"
         out.parent.mkdir(parents=True, exist_ok=True)

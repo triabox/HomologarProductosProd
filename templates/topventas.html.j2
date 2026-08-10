@@ -51,7 +51,8 @@
 
   <div class="sec">
     <h2>🚨 Top de venta NO publicados en CoRD ({{ missing|length }})</h2>
-    <p class="muted">Ordenados por ranking de venta (los primeros son los más vendidos ausentes).</p>
+    <p class="muted">Solo productos que <b>sí están publicados en VTEX</b> y faltan en CoRD
+      (ordenados por ranking de venta). Los que tampoco están en VTEX van aparte abajo — no son error.</p>
     <table>
       <thead><tr><th>Rank</th><th>SKU</th><th>Producto</th><th>Seller</th><th>Pista</th><th>Verificado</th></tr></thead>
       <tbody>
@@ -68,6 +69,28 @@
       </tbody>
     </table>
   </div>
+
+  {% if not_in_vtex %}
+  <div class="sec">
+    <h2>ℹ️ Tampoco están en VTEX ({{ not_in_vtex|length }}) — temporada / descontinuados</h2>
+    <p class="muted">No cuentan como faltantes: hoy no están publicados en el catálogo de VTEX
+      (probablemente estacionales o dados de baja).</p>
+    <table>
+      <thead><tr><th>Rank</th><th>SKU</th><th>Producto</th><th>Seller</th><th>¿En CoRD?</th></tr></thead>
+      <tbody>
+      {% for r in not_in_vtex %}
+        <tr>
+          <td><span class="pill" style="background:#334155;color:var(--muted);">#{{ r.rank }}</span></td>
+          <td>{{ r.sku }}</td>
+          <td>{{ r.name }}</td>
+          <td>{{ r.seller }}</td>
+          <td>{% if r.cord_published %}<span class="pill p-ok">sí</span>{% else %}<span class="muted">no</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 
   <div class="sec">
     <h2>✅ Top de venta que SÍ están publicados ({{ published|length }})</h2>
