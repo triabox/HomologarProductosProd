@@ -194,6 +194,115 @@
     {% endif %}
   </div>
 
+  {# ---- Novedades: ciclo de vida de discrepancias entre corridas ---- #}
+  {% if novedades %}
+  <div class="sec">
+    <h2>🔔 Novedades de la última corrida (#{{ novedades.run_id }})</h2>
+    <p class="muted">
+      Seguimiento de cada discrepancia (SKU + campo) entre corridas: si <b>aparece por
+      primera vez</b>, algo se rompió recientemente (causa localizable en el tiempo);
+      si <b>se resuelve</b>, mide el avance real del equipo.
+    </p>
+    <div style="margin-bottom:10px;">
+      <span class="badge {{ 'b-debajo' if novedades.n_nuevas else 'b-ok' }}">🆕 {{ novedades.n_nuevas }} nuevas</span>
+      <span class="badge b-ok" style="margin-left:6px;">✔ {{ novedades.n_resueltas }} resueltas</span>
+      <span class="badge b-cerca" style="margin-left:6px;">🔁 {{ novedades.reconfirmadas }} reconfirmadas</span>
+      <span class="muted" style="margin-left:6px;">· {{ "{:,}".format(novedades.abiertas) }} abiertas en total (incluye pendientes de re-verificar)</span>
+    </div>
+    {% if novedades.nuevas %}
+    <details open>
+      <summary style="cursor:pointer;font-weight:700;">Nuevas discrepancias (mostrando {{ novedades.nuevas|length }} de {{ novedades.n_nuevas }}{% if has_sales_rank %}, top ventas primero{% endif %})</summary>
+      <table style="margin-top:8px;">
+        <thead><tr>{% if has_sales_rank %}<th>Top</th>{% endif %}<th>SKU</th><th>Campo</th><th>Categoría</th><th>CoRD</th><th>VTEX</th><th>Detalle</th><th>Links</th></tr></thead>
+        <tbody>
+        {% for it in novedades.nuevas %}
+          <tr>
+            {% if has_sales_rank %}<td>{% if it.top_rank %}<span class="badge b-debajo">Top #{{ it.top_rank }}</span>{% endif %}</td>{% endif %}
+            <td>{{ it.sku }}</td>
+            <td>{{ labels.get(it.field, it.field) }}</td>
+            <td>{{ it.category_name }}</td>
+            <td class="bad">{{ it.cord_value }}</td>
+            <td class="muted">{{ it.vtex_value }}</td>
+            <td class="muted" style="font-size:12px;">{{ it.detail }}</td>
+            <td>
+              {% if it.cord_url %}<a href="{{ it.cord_url }}" target="_blank">CoRD</a>{% endif %}
+              {% if it.vtex_url %} · <a href="{{ it.vtex_url }}" target="_blank">VTEX</a>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
+    {% if novedades.resueltas %}
+    <details style="margin-top:8px;">
+      <summary style="cursor:pointer;font-weight:700;">Resueltas en esta corrida (mostrando {{ novedades.resueltas|length }} de {{ novedades.n_resueltas }})</summary>
+      <table style="margin-top:8px;">
+        <thead><tr><th>SKU</th><th>Campo</th><th>Categoría</th><th>Abierta desde</th><th>Links</th></tr></thead>
+        <tbody>
+        {% for it in novedades.resueltas %}
+          <tr>
+            <td>{{ it.sku }}</td>
+            <td>{{ labels.get(it.field, it.field) }}</td>
+            <td>{{ it.category_name }}</td>
+            <td class="muted">{{ (it.first_seen_at or '')[:10] }}</td>
+            <td>{% if it.cord_url %}<a href="{{ it.cord_url }}" target="_blank">CoRD</a>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# ---- Reglas de promoción sospechosas (causa raíz de fallos de precio) ---- #}
+  {% if promo_rules %}
+  <div class="sec">
+    <h2>🧩 Reglas de promoción sospechosas ({{ promo_rules_total }}{% if promo_rules_total > promo_rules|length %} · mostrando las {{ promo_rules|length }} de mayor impacto{% endif %})</h2>
+    <p class="muted">
+      Fallos de precio <b>abiertos</b> agrupados por firma de descuento: varios SKUs con el
+      mismo % desincronizado no son errores sueltos, es una <b>regla de promoción</b> mal
+      sincronizada. Corregir la regla arregla todos sus SKUs de una vez.
+    </p>
+    {% for r in promo_rules %}
+    <details {% if loop.first %}open{% endif %}
+             style="margin-top:12px;border:1px solid #334155;border-radius:10px;padding:12px 14px;">
+      <summary style="cursor:pointer;font-size:15px;font-weight:700;">
+        {{ loop.index }}. {{ r.text }}
+        <span class="pill" style="margin-left:6px;">{{ r.n }} SKUs</span>
+        {% if r.top_count %}<span class="badge b-debajo" style="margin-left:6px;">🔥 {{ r.top_count }} top ventas (mejor: #{{ r.top_best }})</span>{% endif %}
+      </summary>
+      <p class="muted" style="margin:8px 0 4px;">
+        Campo: <b>{{ labels.get(r.field, r.field) }}</b> ·
+        Categorías: {{ r.categories | join(' · ') }}{% if r.more_cats %} · +{{ r.more_cats }} más{% endif %}
+      </p>
+      <table style="margin-top:6px;">
+        <thead><tr>{% if has_sales_rank %}<th>Top</th>{% endif %}<th>SKU</th><th>Categoría</th><th>CoRD</th><th>VTEX</th><th>Links</th></tr></thead>
+        <tbody>
+        {% for it in r.samples %}
+          <tr>
+            {% if has_sales_rank %}<td>{% if it.top_rank %}<span class="badge b-debajo">#{{ it.top_rank }}</span>{% endif %}</td>{% endif %}
+            <td>{{ it.sku }}</td>
+            <td>{{ it.category_name }}</td>
+            <td class="bad">{{ it.cord_value }}</td>
+            <td class="muted">{{ it.vtex_value }}</td>
+            <td>
+              {% if it.cord_url %}<a href="{{ it.cord_url }}" target="_blank">CoRD</a>{% endif %}
+              {% if it.vtex_url %} · <a href="{{ it.vtex_url }}" target="_blank">VTEX</a>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if r.n > r.samples|length %}
+        <p class="muted" style="font-size:12px;margin:8px 0 0;">Mostrando {{ r.samples|length }} de {{ r.n }} SKUs afectados.</p>
+      {% endif %}
+    </details>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {# ---- ¿Qué arreglar primero? — worklist priorizada por cada punto analizado ---- #}
   <div class="sec">
     <h2>¿Qué arreglar primero?</h2>
@@ -231,13 +340,14 @@
         {% else %}
           <table style="margin-top:10px;">
             <thead><tr>
-              <th>#</th><th>SKU</th><th>Categoría</th><th>CoRD</th><th>VTEX</th>
+              <th>#</th>{% if has_sales_rank %}<th>Top</th>{% endif %}<th>SKU</th><th>Categoría</th><th>CoRD</th><th>VTEX</th>
               <th>Detalle</th><th>Links</th>
             </tr></thead>
             <tbody>
             {% for it in w.rows %}
               <tr>
                 <td class="muted">{{ loop.index }}</td>
+                {% if has_sales_rank %}<td>{% if it.top_rank %}<span class="badge b-debajo" title="ranking en el listado 90% de la venta">#{{ it.top_rank }}</span>{% endif %}</td>{% endif %}
                 <td>{{ it.sku }}</td>
                 <td>{{ it.category_name }}</td>
                 <td class="bad">{{ it.cord_value }}</td>

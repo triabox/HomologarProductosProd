@@ -12,6 +12,7 @@ from typing import Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from .analysis import load_sales_index, promo_rules, rank_for, sort_by_impact
 from .config import Config
 from .engine import Engine
 from .stats import GlobalSummary, compute_deltas, global_summary
@@ -244,6 +245,8 @@ def render_index(cfg: Config, storage: Storage) -> Path:
 
     # ---- worklists priorizadas: una por cada punto analizado (comparador) ----
     ITEM_LIMIT = 50
+    # impacto comercial: ranking de Top Ventas (solo existe en local; en prod queda vacío)
+    sales_idx = load_sales_index(cfg)
     attr_missing = []
     for r in storage.attribute_gaps(latest_id, "missing"):
         d = dict(r)
@@ -272,8 +275,13 @@ def render_index(cfg: Config, storage: Storage) -> Path:
             block["shown"] = min(len(attr_missing), ITEM_LIMIT)
             block["total_rows"] = len(attr_missing)
         else:
-            # worklist por producto (peor primero)
-            items = [dict(r) for r in storage.failing_items(latest_id, key, ITEM_LIMIT)]
+            # worklist por producto: top ventas primero, luego peor score
+            items = [dict(r) for r in storage.failing_items(latest_id, key, 400)]
+            for it in items:
+                it["top_rank"] = rank_for(sales_idx, it.get("cord_url"))
+            if sales_idx:
+                sort_by_impact(items)
+            items = items[:ITEM_LIMIT]
             block["kind"] = "product"
             block["rows"] = items
             block["shown"] = len(items)
@@ -339,6 +347,32 @@ def render_index(cfg: Config, storage: Storage) -> Path:
         "delta": round(pct - prev_pct, 1) if prev_pct is not None else None,
     }
 
+    # ---- novedades: ciclo de vida de discrepancias (nueva/reconfirmada/resuelta) ----
+    novedades = None
+    news_run = storage.last_run_with_fields()
+    if news_run:
+        nuevas = [dict(r) for r in storage.discrepancy_list("new", news_run)]
+        resueltas = [dict(r) for r in storage.discrepancy_list("resolved", news_run)]
+        for it in nuevas:
+            it["top_rank"] = rank_for(sales_idx, it.get("cord_url"))
+        if sales_idx:
+            sort_by_impact(nuevas)
+        summ = storage.discrepancy_summary(news_run)
+        novedades = {
+            "run_id": news_run,
+            "n_nuevas": summ["nuevas"],
+            "n_resueltas": summ["resueltas"],
+            "reconfirmadas": summ["reconfirmadas"],
+            "abiertas": summ["abiertas"],
+            "nuevas": nuevas,
+            "resueltas": resueltas,
+        }
+
+    # ---- reglas de promoción sospechosas (agrupación de fallos de precio) ----
+    all_rules = promo_rules(storage, sales_idx)
+    rules = all_rules[:40]
+    rules_total = len(all_rules)
+
     # resumen de Top Ventas si el proceso local corrió (en prod no existe y se omite)
     topventas = None
     tv_db = cfg.root / "data" / "homologador-topventas.db"
@@ -378,6 +412,10 @@ def render_index(cfg: Config, storage: Storage) -> Path:
         latest_file=history[0]["file"],
         priority_categories=cats[:25],
         worklists=worklists,
+        novedades=novedades,
+        promo_rules=rules,
+        promo_rules_total=rules_total,
+        has_sales_rank=bool(sales_idx),
         count_summary=count_summary,
         count_categories=count_cats,
         history=history,

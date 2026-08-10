@@ -101,7 +101,28 @@ CREATE TABLE IF NOT EXISTS cursor (
     last_done_at TEXT,
     sample_offset INTEGER DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS discrepancies (
+    sku TEXT NOT NULL,
+    field TEXT NOT NULL,
+    category_name TEXT,
+    severity TEXT,
+    detail TEXT,
+    cord_value TEXT,
+    vtex_value TEXT,
+    cord_url TEXT,
+    vtex_url TEXT,
+    first_seen_run INTEGER,
+    first_seen_at TEXT,
+    last_seen_run INTEGER,
+    last_seen_at TEXT,
+    times_seen INTEGER DEFAULT 1,
+    resolved_run INTEGER,
+    resolved_at TEXT,
+    PRIMARY KEY (sku, field)
+);
+CREATE INDEX IF NOT EXISTS idx_disc_open ON discrepancies(resolved_at, field);
 CREATE INDEX IF NOT EXISTS idx_field_run ON field_results(run_id);
+CREATE INDEX IF NOT EXISTS idx_field_skufield ON field_results(field, sku);
 CREATE INDEX IF NOT EXISTS idx_prod_run ON product_results(run_id);
 """
 
@@ -112,9 +133,14 @@ class Storage:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.db_path)
         self.conn.row_factory = sqlite3.Row
+        had_lifecycle = self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='discrepancies'"
+        ).fetchone() is not None
         self.conn.executescript(_SCHEMA)
         self._migrate()
         self.conn.commit()
+        if not had_lifecycle:
+            self._backfill_discrepancies()
 
     def _migrate(self) -> None:
         """Migraciones livianas para bases creadas con esquemas anteriores."""
@@ -161,7 +187,11 @@ class Storage:
         self.conn.commit()
 
     # -- resultados --------------------------------------------------------
-    def save_comparison(self, run_id: int, comp: ProductComparison) -> None:
+    def save_comparison(
+        self, run_id: int, comp: ProductComparison, when: "str | None" = None
+    ) -> None:
+        from datetime import datetime, timezone
+        when = when or datetime.now(timezone.utc).isoformat(timespec="seconds")
         self.conn.execute(
             """INSERT INTO product_results
                (run_id, sku, category_name, vtex_found, score, cord_url, vtex_url, error)
@@ -177,6 +207,12 @@ class Storage:
                 (run_id, comp.sku, fr.field, int(fr.ok), fr.score, fr.severity.value,
                  fr.detail, fr.cord_value, fr.vtex_value),
             )
+            if comp.vtex_found:
+                self._apply_discrepancy(
+                    run_id, when, comp.sku, fr.field, fr.ok, fr.severity.value,
+                    fr.detail, fr.cord_value, fr.vtex_value,
+                    comp.category_name, comp.cord_url, comp.vtex_url,
+                )
             for kind in ("missing", "mismatch"):
                 for label in fr.extra.get(kind, []):
                     self.conn.execute(
@@ -184,6 +220,141 @@ class Storage:
                            (run_id, sku, category_name, label, kind) VALUES (?,?,?,?,?)""",
                         (run_id, comp.sku, comp.category_name, label, kind),
                     )
+
+    # -- ciclo de vida de discrepancias (nueva / reconfirmada / resuelta) --
+    def _apply_discrepancy(
+        self, run_id: int, when: str, sku: str, field: str, ok: bool, severity: str,
+        detail: "str | None", cord_value: "str | None", vtex_value: "str | None",
+        category_name: "str | None", cord_url: "str | None", vtex_url: "str | None",
+    ) -> None:
+        """Actualiza el historial de vida de una discrepancia (sku, campo).
+
+        - campo OK       -> cierra la discrepancia abierta (si había): resuelta.
+        - campo con fallo -> nueva (o reabierta si estaba resuelta), o reconfirmada.
+        - NO_APLICA no confirma ni resuelve (el campo dejó de ser comparable).
+        """
+        if severity == "NO_APLICA":
+            return
+        if ok:
+            self.conn.execute(
+                "UPDATE discrepancies SET resolved_run=?, resolved_at=? "
+                "WHERE sku=? AND field=? AND resolved_at IS NULL",
+                (run_id, when, sku, field),
+            )
+            return
+        row = self.conn.execute(
+            "SELECT resolved_at FROM discrepancies WHERE sku=? AND field=?",
+            (sku, field),
+        ).fetchone()
+        if row is None or row["resolved_at"] is not None:
+            # nueva (o reaparece tras haberse resuelto): reinicia el ciclo de vida
+            self.conn.execute(
+                """INSERT OR REPLACE INTO discrepancies
+                   (sku, field, category_name, severity, detail, cord_value, vtex_value,
+                    cord_url, vtex_url, first_seen_run, first_seen_at,
+                    last_seen_run, last_seen_at, times_seen, resolved_run, resolved_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,NULL,NULL)""",
+                (sku, field, category_name, severity, detail, cord_value, vtex_value,
+                 cord_url, vtex_url, run_id, when, run_id, when),
+            )
+        else:
+            self.conn.execute(
+                """UPDATE discrepancies SET last_seen_run=?, last_seen_at=?,
+                       times_seen=times_seen+1, severity=?, detail=?,
+                       cord_value=?, vtex_value=?, category_name=?, cord_url=?, vtex_url=?
+                   WHERE sku=? AND field=?""",
+                (run_id, when, severity, detail, cord_value, vtex_value,
+                 category_name, cord_url, vtex_url, sku, field),
+            )
+
+    def _backfill_discrepancies(self) -> None:
+        """Reconstruye el historial de discrepancias reproduciendo las corridas viejas
+        (una sola vez, cuando la tabla se crea sobre una base con datos previos)."""
+        runs = self.conn.execute(
+            "SELECT id, started_at FROM runs WHERE finished_at IS NOT NULL ORDER BY id"
+        ).fetchall()
+        for r in runs:
+            prods = {
+                p["sku"]: p for p in self.conn.execute(
+                    "SELECT sku, category_name, cord_url, vtex_url FROM product_results "
+                    "WHERE run_id=? AND vtex_found=1", (r["id"],)
+                )
+            }
+            if not prods:
+                continue
+            for fr in self.conn.execute(
+                "SELECT * FROM field_results WHERE run_id=?", (r["id"],)
+            ):
+                p = prods.get(fr["sku"])
+                if p is None:
+                    continue
+                self._apply_discrepancy(
+                    r["id"], r["started_at"], fr["sku"], fr["field"], bool(fr["ok"]),
+                    fr["severity"], fr["detail"], fr["cord_value"], fr["vtex_value"],
+                    p["category_name"], p["cord_url"], p["vtex_url"],
+                )
+        self.conn.commit()
+        n = self.conn.execute(
+            "SELECT COUNT(*) n FROM discrepancies WHERE resolved_at IS NULL"
+        ).fetchone()["n"]
+        if runs:
+            print(f"[storage] historial de discrepancias reconstruido "
+                  f"({len(runs)} corridas · {n} abiertas)")
+
+    def last_run_with_fields(self) -> Optional[int]:
+        """Última corrida finalizada que comparó productos (excluye counts-only)."""
+        row = self.conn.execute(
+            """SELECT r.id FROM runs r WHERE r.finished_at IS NOT NULL
+               AND EXISTS (SELECT 1 FROM field_results f WHERE f.run_id=r.id)
+               ORDER BY r.id DESC LIMIT 1"""
+        ).fetchone()
+        return int(row["id"]) if row else None
+
+    def discrepancy_summary(self, run_id: int) -> dict:
+        def _n(sql: str, *p) -> int:
+            return self.conn.execute(sql, p).fetchone()[0]
+        return {
+            "nuevas": _n("SELECT COUNT(*) FROM discrepancies "
+                         "WHERE first_seen_run=? AND resolved_at IS NULL", run_id),
+            "resueltas": _n("SELECT COUNT(*) FROM discrepancies WHERE resolved_run=?", run_id),
+            "reconfirmadas": _n("SELECT COUNT(*) FROM discrepancies "
+                                "WHERE resolved_at IS NULL AND last_seen_run=? "
+                                "AND first_seen_run<?", run_id, run_id),
+            "abiertas": _n("SELECT COUNT(*) FROM discrepancies WHERE resolved_at IS NULL"),
+        }
+
+    def discrepancy_list(self, kind: str, run_id: int, limit: int = 40) -> list[sqlite3.Row]:
+        """Discrepancias 'new' (aparecieron en esta corrida) o 'resolved' (se cerraron)."""
+        where = ("first_seen_run=? AND resolved_at IS NULL" if kind == "new"
+                 else "resolved_run=?")
+        return self.conn.execute(
+            f"""SELECT * FROM discrepancies WHERE {where}
+                ORDER BY field, category_name, sku LIMIT ?""",
+            (run_id, limit),
+        ).fetchall()
+
+    def open_discrepancies(self, fields: "tuple[str, ...] | None" = None) -> list[sqlite3.Row]:
+        if fields:
+            ph = ",".join("?" * len(fields))
+            return self.conn.execute(
+                f"SELECT * FROM discrepancies WHERE resolved_at IS NULL AND field IN ({ph})",
+                tuple(fields),
+            ).fetchall()
+        return self.conn.execute(
+            "SELECT * FROM discrepancies WHERE resolved_at IS NULL"
+        ).fetchall()
+
+    def latest_regular_prices(self) -> dict[str, tuple]:
+        """Último precio de venta observado por SKU: {sku: (cord_value, vtex_value)}."""
+        return {
+            r["sku"]: (r["cord_value"], r["vtex_value"])
+            for r in self.conn.execute(
+                """SELECT sku, cord_value, vtex_value FROM field_results
+                   WHERE field='precio_venta' AND id IN (
+                       SELECT MAX(id) FROM field_results
+                       WHERE field='precio_venta' GROUP BY sku)"""
+            )
+        }
 
     def save_category_stats(
         self, run_id: int, category_name: str, sampled: int, vtex_found: int,
