@@ -47,6 +47,13 @@ CREATE TABLE IF NOT EXISTS checks (
     vtex_published INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_checks_sku ON checks(sku);
+CREATE TABLE IF NOT EXISTS data_summary (
+    track TEXT, field TEXT, ok INTEGER, total INTEGER, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS data_fails (
+    rank INTEGER, sku TEXT, name TEXT, track TEXT, field TEXT,
+    cord_value TEXT, vtex_value TEXT, updated_at TEXT
+);
 """
 
 
@@ -246,6 +253,89 @@ class TopVentas:
                   f"publicados {pub} ({pct}) · sin stock {r['sin_stock'] or 0}")
         db.close()
 
+    # -- validación de DATOS de los top publicados --------------------------
+    async def validate_published_data(self) -> None:
+        """Corre la comparación completa (precios/nombre/etc.) sobre los top de venta
+        publicados en CoRD y persiste el resultado para la sección del reporte."""
+        import collections
+        from .cord_scraper import CordScraper, permalink_from_url
+        from .engine import Engine
+        from .vtex_client import VtexClient
+
+        eng = Engine(self.cfg)
+        db = sqlite3.connect(self.db_path)
+        db.row_factory = sqlite3.Row
+        db.executescript(_SCHEMA)
+        _migrate(db)
+        rows = db.execute("""
+            WITH last AS (SELECT c.*, ROW_NUMBER() OVER
+                (PARTITION BY sku ORDER BY checked_at DESC) rn FROM checks c)
+            SELECT s.sku, s.rank, s.name, s.track, l.cord_url
+            FROM skus s JOIN last l ON l.sku=s.sku AND l.rn=1
+            WHERE l.published=1 AND l.cord_url IS NOT NULL ORDER BY s.rank""").fetchall()
+        print(f"[topventas:datos] validando datos de {len(rows)} top publicados...")
+
+        agg = collections.defaultdict(lambda: collections.defaultdict(lambda: [0, 0]))
+        fails = []
+        async with HttpClient(self.cfg) as http:
+            scraper = CordScraper(self.cfg, http)
+            vc = VtexClient(self.cfg, http)
+
+            async def one(r):
+                try:
+                    cord = await scraper.fetch_product(r["cord_url"], r["sku"])
+                    if cord is None:
+                        return None
+                    if r["track"] == "oechsle":
+                        vp = await vc.get_by_sku(r["sku"])
+                    else:
+                        vp = (await vc.get_by_ean(cord.ean, prefer_seller=cord.seller,
+                                                  expected_name=cord.name)
+                              if cord.ean else None)
+                        if vp is None:
+                            vp = await vc.get_by_slug(permalink_from_url(r["cord_url"]),
+                                                      prefer_seller=cord.seller)
+                    return (r, eng.compare(r["sku"], cord, vp, cord_url=r["cord_url"]))
+                except Exception:
+                    return None
+
+            done = 0
+            for i in range(0, len(rows), 12):
+                out = await asyncio.gather(*(one(r) for r in rows[i:i + 12]))
+                for x in out:
+                    if not x:
+                        continue
+                    r, comp = x
+                    if not comp.vtex_found:
+                        continue
+                    for fr in comp.fields:
+                        if fr.severity.value == "NO_APLICA":
+                            continue
+                        a = agg[r["track"]][fr.field]
+                        a[1] += 1
+                        if fr.ok:
+                            a[0] += 1
+                        elif fr.field.startswith("precio"):
+                            fails.append((r["rank"], r["sku"], r["name"], r["track"],
+                                          fr.field, fr.cord_value, fr.vtex_value))
+                done += len(rows[i:i + 12])
+                if done % 240 == 0:
+                    print(f"[topventas:datos]   {done}/{len(rows)}")
+
+        now = time.strftime("%Y-%m-%d %H:%M")
+        db.execute("DELETE FROM data_summary")
+        db.execute("DELETE FROM data_fails")
+        for track, fields in agg.items():
+            for field, (ok, total) in fields.items():
+                db.execute("INSERT INTO data_summary VALUES (?,?,?,?,?)",
+                           (track, field, ok, total, now))
+        for f in sorted(fails):
+            db.execute("INSERT INTO data_fails VALUES (?,?,?,?,?,?,?,?)", (*f, now))
+        db.commit()
+        print(f"[topventas:datos] {len(fails)} fallos de precio en top publicados")
+        self.render_report(db)
+        db.close()
+
     # -- reporte HTML -------------------------------------------------------
     def render_report(self, db: sqlite3.Connection) -> Path:
         from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -303,7 +393,29 @@ class TopVentas:
             WHERE l.published=1 ORDER BY s.rank"""
         )]
         total_skus = db.execute("SELECT COUNT(*) FROM skus").fetchone()[0]
+        # sección de calidad de datos (si se corrió --datos)
+        datos = None
+        try:
+            ds = db.execute("SELECT * FROM data_summary").fetchall()
+            if ds:
+                labels = {"precio_venta": "Precio venta", "precio_promocional": "Precio promo",
+                          "precio_sip": "Precio SIP", "name": "Nombre",
+                          "description": "Descripción", "attributes": "Atributos",
+                          "variants": "Variantes"}
+                order = list(labels)
+                by_track = {}
+                for r in ds:
+                    by_track.setdefault(r["track"], {})[r["field"]] = (r["ok"], r["total"])
+                datos = {
+                    "updated_at": ds[0]["updated_at"],
+                    "order": order, "labels": labels, "by_track": by_track,
+                    "fails": [dict(x) for x in db.execute(
+                        "SELECT * FROM data_fails ORDER BY rank")],
+                }
+        except sqlite3.OperationalError:
+            pass
         html = env.get_template("topventas.html.j2").render(
+            datos=datos,
             total_skus=total_skus,
             generated_at=time.strftime("%Y-%m-%d %H:%M"),
             tracks=tracks, missing=missing, no_stock=no_stock, published=published,

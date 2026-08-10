@@ -192,7 +192,9 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("sellers", help="auditar sellers CoRD vs VTEX (corrida separada)")
 
-    sub.add_parser("topventas", help="verificar publicación en CoRD de los SKUs top de venta (solo local)")
+    p_tv = sub.add_parser("topventas", help="verificar publicación en CoRD de los SKUs top de venta (solo local)")
+    p_tv.add_argument("--datos", action="store_true",
+                      help="validar los DATOS (precios/nombre/etc.) de los top publicados")
 
     p_srv = sub.add_parser("serve", help="servir el dashboard con corridas a demanda")
     p_srv.add_argument("--port", type=int, default=int(__import__("os").environ.get("PORT", 8080)))
@@ -212,7 +214,10 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_cmd_sellers(args))
     if args.cmd == "topventas":
         from .topventas import TopVentas
-        return asyncio.run(TopVentas(_cfg(args)).run()) or 0
+        tv = TopVentas(_cfg(args))
+        if getattr(args, "datos", False):
+            return asyncio.run(tv.validate_published_data()) or 0
+        return asyncio.run(tv.run()) or 0
     if args.cmd == "serve":
         from .webserver import main as serve_main
         cfg = _cfg(args)

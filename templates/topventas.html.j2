@@ -70,6 +70,46 @@
     </table>
   </div>
 
+  {% if datos %}
+  <div class="sec">
+    <h2>🎯 Calidad de datos de los top publicados <span class="muted" style="font-size:12px;">(actualizado {{ datos.updated_at }})</span></h2>
+    <table>
+      <thead><tr><th>Campo</th>
+        {% for t in ['oechsle','plazavea','marketplace'] %}{% if t in datos.by_track %}<th>{{ t }}</th>{% endif %}{% endfor %}
+      </tr></thead>
+      <tbody>
+      {% for f in datos.order %}
+        <tr><td>{{ datos.labels[f] }}</td>
+        {% for t in ['oechsle','plazavea','marketplace'] %}{% if t in datos.by_track %}
+          {% set v = datos.by_track[t].get(f) %}
+          <td>{% if v %}{{ (v[0]/v[1]*100)|round(1) }}% <span class="muted">de {{ v[1] }}</span>{% else %}—{% endif %}</td>
+        {% endif %}{% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <h2 style="margin-top:18px;">💸 Fallos de precio en top publicados ({{ datos.fails|length }})</h2>
+    <div style="max-height:380px;overflow-y:auto;">
+    <table>
+      <thead><tr><th>Rank</th><th>SKU</th><th>Producto</th><th>Campo</th><th>CoRD</th><th>VTEX</th></tr></thead>
+      <tbody>
+      {% for r in datos.fails %}
+        <tr>
+          <td><span class="pill p-bad">#{{ r.rank }}</span></td>
+          <td>{{ r.sku }}</td>
+          <td>{{ r.name }}</td>
+          <td>{{ r.field | replace('precio_','') }}</td>
+          <td style="color:var(--bad);font-weight:600;">{{ r.cord_value }}</td>
+          <td class="muted">{{ r.vtex_value }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+
   {% if not_in_vtex %}
   <div class="sec">
     <h2>ℹ️ Tampoco están en VTEX ({{ not_in_vtex|length }}) — temporada / descontinuados</h2>
