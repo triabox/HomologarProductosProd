@@ -107,7 +107,15 @@ class PrecioSipComparator(Comparator):
                             f"menos en VTEX (mejor CoRD {cord_best:.2f})"),
                     cord_value="None", vtex_value=f"{vtex.sip_price:.2f}",
                 )
-        # precio con tarjeta: solo si CoRD lo expone (offer > 0);
+        # precio EFECTIVO con tarjeta en CoRD: si la promo general es menor que el
+        # precio SIP, el cliente con tarjeta paga la promo. La simulación de VTEX ya
+        # devuelve el mejor precio pagando con Tarjeta Oh, así que comparar el dato
+        # SIP crudo sería asimétrico (falso positivo cuando la promo pisa al SIP).
+        cord_sip = cord.sip_price
+        if (cord_sip is not None and cord.promo_price is not None
+                and cord.promo_price < cord_sip):
+            cord_sip = cord.promo_price
+        # solo si CoRD expone precio con tarjeta (offer > 0);
         # si el producto no participa de SIP, no aplica (lo resuelve _compare)
-        return _compare(self.key, cord.sip_price, vtex.sip_price, self.tol,
+        return _compare(self.key, cord_sip, vtex.sip_price, self.tol,
                         na_if_missing=True)
