@@ -84,6 +84,9 @@
       <option value="30">30 min</option>
       <option value="60">60 min</option>
     </select>
+    <label class="muted" style="display:flex;align-items:center;gap:5px;cursor:pointer;" title="barrido rápido de conteo por categoría (CoRD vs VTEX), sin validar productos uno a uno">
+      <input type="checkbox" id="runCounts"> solo conteo
+    </label>
     <span id="runStatus" class="muted"></span>
   </div>
   <div class="sub">
@@ -556,8 +559,9 @@
       const t=token(false); if(!t) return;
       const prov=document.getElementById('runProv').value;
       const min=document.getElementById('runMin').value;
+      const counts=document.getElementById('runCounts').checked ? '1' : '0';
       btn.disabled=true; st.textContent='lanzando…';
-      const r=await fetch('/run?token='+encodeURIComponent(t)+'&provider='+prov+'&minutes='+min, {method:'POST'});
+      const r=await fetch('/run?token='+encodeURIComponent(t)+'&provider='+prov+'&minutes='+min+'&counts_only='+counts, {method:'POST'});
       const d=await r.json().catch(()=>({}));
       if(r.status===401){ st.textContent='token inválido'; localStorage.removeItem('runToken'); btn.disabled=false; token(true); }
       else if(!r.ok){ st.textContent='⚠ '+(d.error||r.status); btn.disabled=false; }

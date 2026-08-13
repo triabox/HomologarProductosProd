@@ -31,27 +31,28 @@ _state: dict = {"running": None, "started_at": None, "finished": None}
 _lock = threading.Lock()
 
 
-def _commands(provider: str, minutes: int) -> list[list[str]]:
+def _commands(provider: str, minutes: int, counts_only: bool = False) -> list[list[str]]:
     m = str(minutes)
+    extra = ["--counts-only"] if counts_only else []
     if provider == "sellers":
         return [[_bin(), "sellers"]]
     if provider == "todo":
         sub = str(max(5, minutes // 3))
         return [
-            [_bin(), "run", "--max-runtime", m],
-            [_bin(), "--provider", "plazavea", "run", "--max-runtime", sub],
-            [_bin(), "--provider", "marketplace", "run", "--max-runtime", sub],
+            [_bin(), "run", "--max-runtime", m, *extra],
+            [_bin(), "--provider", "plazavea", "run", "--max-runtime", sub, *extra],
+            [_bin(), "--provider", "marketplace", "run", "--max-runtime", sub, *extra],
             [_bin(), "sellers"],
         ]
     if provider == "oechsle":
-        return [[_bin(), "run", "--max-runtime", m]]
-    return [[_bin(), "--provider", provider, "run", "--max-runtime", m]]
+        return [[_bin(), "run", "--max-runtime", m, *extra]]
+    return [[_bin(), "--provider", provider, "run", "--max-runtime", m, *extra]]
 
 
-def _launch(provider: str, minutes: int) -> None:
+def _launch(provider: str, minutes: int, counts_only: bool = False) -> None:
     def worker():
         try:
-            for cmd in _commands(provider, minutes):
+            for cmd in _commands(provider, minutes, counts_only):
                 print(f"[webserver] ejecutando: {' '.join(cmd)}", flush=True)
                 subprocess.run(cmd, check=False)
         finally:
@@ -103,15 +104,17 @@ class Handler(SimpleHTTPRequestHandler):
             minutes = max(1, min(120, int((q.get("minutes") or ["15"])[0])))
         except ValueError:
             minutes = 15
+        counts_only = (q.get("counts_only") or ["0"])[0] in ("1", "true")
         with _lock:
             if _state["running"]:
                 self._json(409, {"error": f"ya hay una corrida en curso ({_state['running']})",
                                  "running": _state["running"]})
                 return
-            _state["running"] = provider
+            _state["running"] = provider + (" (conteo)" if counts_only else "")
             _state["started_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        _launch(provider, minutes)
-        self._json(200, {"ok": True, "provider": provider, "minutes": minutes})
+        _launch(provider, minutes, counts_only)
+        self._json(200, {"ok": True, "provider": provider, "minutes": minutes,
+                          "counts_only": counts_only})
 
 
 def main(port: int, directory: str) -> None:
