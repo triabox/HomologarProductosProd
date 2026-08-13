@@ -82,6 +82,7 @@ class Severity(str, Enum):
     ATRIBUTO = "ATRIBUTO"
     VARIANTE = "VARIANTE"          # faltan variantes (colores/tallas) en CoRD
     VARIANTE_EXTRA = "VARIANTE_EXTRA"  # CoRD tiene variantes que ya no están en VTEX
+    STOCK = "STOCK"                 # disponibilidad no coincide entre CoRD y VTEX
 
 
 @dataclass

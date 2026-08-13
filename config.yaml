@@ -79,6 +79,7 @@ score_weights:
   description: 0.13
   attributes: 0.10
   variants: 0.15
+  stock: 0.10
 
 # Pistas de validación por proveedor (corridas separadas, mismos comparadores):
 #  - sellers / sellers_exclude: qué sellerIds de CoRD valida esta pista
@@ -114,6 +115,7 @@ goals:
   description: 95
   attributes: 90
   variants: 95
+  stock: 98
   category_count: 95   # % de categorías cuyo conteo de productos coincide (CoRD == VTEX-Oechsle)
 
 scheduler:
