@@ -390,7 +390,11 @@ class TopVentas:
                    SUM(CASE WHEN l.published=1 AND l.in_stock=0 THEN 1 ELSE 0 END) ns,
                    SUM(s.venta) venta_total,
                    SUM(CASE WHEN l.sku IS NOT NULL THEN s.venta ELSE 0 END) venta_ver,
-                   SUM(CASE WHEN l.published=1 THEN s.venta ELSE 0 END) venta_pub,
+                   -- base VIVA y publicada: solo productos que SIGUEN en VTEX
+                   SUM(CASE WHEN l.sku IS NOT NULL AND (l.vtex_published IS NULL
+                       OR l.vtex_published=1) THEN s.venta ELSE 0 END) venta_viva,
+                   SUM(CASE WHEN l.published=1 AND (l.vtex_published IS NULL
+                       OR l.vtex_published=1) THEN s.venta ELSE 0 END) venta_pub,
                    SUM(CASE WHEN l.published=0 AND (l.vtex_published IS NULL
                        OR l.vtex_published=1) THEN s.venta ELSE 0 END) venta_falta,
                    SUM(CASE WHEN l.vtex_published=0 THEN s.venta ELSE 0 END) venta_novtex
@@ -399,9 +403,9 @@ class TopVentas:
         ):
             ver = r["verified"] or 0
             vv, vp = r["venta_ver"] or 0, r["venta_pub"] or 0
-            # base VIVA: venta verificada menos lo que ya no está ni en VTEX
+            # base VIVA: solo lo que sigue publicado en VTEX
             # (temporada/descontinuados no cuentan — no son faltantes de CoRD)
-            viva = vv - (r["venta_novtex"] or 0)
+            viva = r["venta_viva"] or 0
             tracks.append({
                 "key": r["track"],
                 "label": labels.get(r["track"], r["track"]),
