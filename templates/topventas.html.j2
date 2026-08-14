@@ -45,11 +45,12 @@
       <div class="v">{{ t.pub_pct }}% publicados</div>
       {% if t.venta_ver %}
       <div class="m" style="color:var(--ink);font-weight:600;">
-        💰 {{ t.venta_pub_pct }}% de la venta (S/) publicada
+        💰 {{ t.venta_pub_pct }}% de la venta viva publicada
         · en riesgo S/ {{ "{:,.0f}".format(t.venta_falta) }}
       </div>
-      <div class="m">venta verificada S/ {{ "{:,.0f}".format(t.venta_ver) }}
-        ({{ t.venta_cov_pct }}% de S/ {{ "{:,.0f}".format(t.venta_total) }})</div>
+      <div class="m">venta viva S/ {{ "{:,.0f}".format(t.venta_viva) }}
+        (excluye S/ {{ "{:,.0f}".format(t.venta_novtex) }} que ya no está en VTEX)
+        · verificado {{ t.venta_cov_pct }}% de S/ {{ "{:,.0f}".format(t.venta_total) }}</div>
       {% endif %}
       <div class="m">verificados {{ t.verified }}/{{ t.total }} ({{ t.cov_pct }}% del listado)
         · sin stock {{ t.no_stock }}</div>

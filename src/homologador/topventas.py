@@ -399,6 +399,9 @@ class TopVentas:
         ):
             ver = r["verified"] or 0
             vv, vp = r["venta_ver"] or 0, r["venta_pub"] or 0
+            # base VIVA: venta verificada menos lo que ya no está ni en VTEX
+            # (temporada/descontinuados no cuentan — no son faltantes de CoRD)
+            viva = vv - (r["venta_novtex"] or 0)
             tracks.append({
                 "key": r["track"],
                 "label": labels.get(r["track"], r["track"]),
@@ -410,7 +413,8 @@ class TopVentas:
                 "venta_total": r["venta_total"] or 0,
                 "venta_ver": vv,
                 "venta_cov_pct": round(vv / r["venta_total"] * 100, 1) if r["venta_total"] else 0,
-                "venta_pub_pct": round(vp / vv * 100, 1) if vv else 0,
+                "venta_viva": viva,
+                "venta_pub_pct": round(vp / viva * 100, 1) if viva else 0,
                 "venta_falta": r["venta_falta"] or 0,
                 "venta_novtex": r["venta_novtex"] or 0,
             })
