@@ -132,7 +132,13 @@ class CordApi:
             path_names.append(cat["name"])
 
         permalink = (p.get("seo") or {}).get("permalink") or ""
-        available = (seller.get("availableUnits") or 0) > 0
+        # disponibilidad a nivel PRODUCTO: alguna variante (talla/color) con stock.
+        # Mirar solo skus[0] daba falsos "sin stock" en moda (primera talla agotada
+        # pero el resto disponible), asimétrico con VTEX que elige una variante con stock.
+        available = any(
+            ((s.get("seller") or {}).get("availableUnits") or 0) > 0
+            for s in (p.get("skus") or [])
+        ) or (seller.get("availableUnits") or 0) > 0
         ean = str(sku0.get("ean")) if sku0.get("ean") not in (None, "", "0", 0) else None
 
         return Product(
