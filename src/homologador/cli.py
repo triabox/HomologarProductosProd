@@ -195,6 +195,11 @@ def main(argv: list[str] | None = None) -> int:
     p_tv = sub.add_parser("topventas", help="verificar publicación en CoRD de los SKUs top de venta (solo local)")
     p_tv.add_argument("--datos", action="store_true",
                       help="validar los DATOS (precios/nombre/etc.) de los top publicados")
+    p_tv.add_argument("--track", default=None,
+                      choices=["oechsle", "plazavea", "marketplace"],
+                      help="limitar a una pista")
+    p_tv.add_argument("--all", action="store_true", dest="all_pending",
+                      help="barrido completo: verificar TODOS los SKUs nunca verificados")
 
     p_srv = sub.add_parser("serve", help="servir el dashboard con corridas a demanda")
     p_srv.add_argument("--port", type=int, default=int(__import__("os").environ.get("PORT", 8080)))
@@ -217,7 +222,10 @@ def main(argv: list[str] | None = None) -> int:
         tv = TopVentas(_cfg(args))
         if getattr(args, "datos", False):
             return asyncio.run(tv.validate_published_data()) or 0
-        return asyncio.run(tv.run()) or 0
+        return asyncio.run(tv.run(
+            track=getattr(args, "track", None),
+            all_pending=getattr(args, "all_pending", False),
+        )) or 0
     if args.cmd == "serve":
         from .webserver import main as serve_main
         cfg = _cfg(args)

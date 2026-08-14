@@ -43,6 +43,14 @@
     <div class="card">
       <div class="k">{{ t.label }}</div>
       <div class="v">{{ t.pub_pct }}% publicados</div>
+      {% if t.venta_ver %}
+      <div class="m" style="color:var(--ink);font-weight:600;">
+        💰 {{ t.venta_pub_pct }}% de la venta (S/) publicada
+        · en riesgo S/ {{ "{:,.0f}".format(t.venta_falta) }}
+      </div>
+      <div class="m">venta verificada S/ {{ "{:,.0f}".format(t.venta_ver) }}
+        ({{ t.venta_cov_pct }}% de S/ {{ "{:,.0f}".format(t.venta_total) }})</div>
+      {% endif %}
       <div class="m">verificados {{ t.verified }}/{{ t.total }} ({{ t.cov_pct }}% del listado)
         · sin stock {{ t.no_stock }}</div>
     </div>
@@ -54,13 +62,14 @@
     <p class="muted">Solo productos que <b>sí están publicados en VTEX</b> y faltan en CoRD
       (ordenados por ranking de venta). Los que tampoco están en VTEX van aparte abajo — no son error.</p>
     <table>
-      <thead><tr><th>Rank</th><th>SKU</th><th>Producto</th><th>Seller</th><th>Pista</th><th>Verificado</th></tr></thead>
+      <thead><tr><th>Rank</th><th>SKU</th><th>Producto</th><th>Venta 6m</th><th>Seller</th><th>Pista</th><th>Verificado</th></tr></thead>
       <tbody>
       {% for r in missing %}
         <tr>
           <td><span class="pill p-bad">#{{ r.rank }}</span></td>
           <td>{{ r.sku }}</td>
           <td>{{ r.name }}</td>
+          <td style="color:var(--warn);font-weight:600;">{% if r.venta %}S/ {{ "{:,.0f}".format(r.venta) }}{% else %}—{% endif %}</td>
           <td>{{ r.seller }}</td>
           <td>{{ r.track }}</td>
           <td class="muted">{{ r.checked_at[:10] }}</td>

@@ -33,7 +33,9 @@ CREATE TABLE IF NOT EXISTS skus (
     rank INTEGER,
     name TEXT,
     seller TEXT,
-    track TEXT
+    track TEXT,
+    venta REAL,          -- Venta S/ de 6 meses (el rank ordena por esta columna)
+    unidades INTEGER
 );
 CREATE TABLE IF NOT EXISTS checks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,6 +63,17 @@ def _migrate(db: sqlite3.Connection) -> None:
     cols = {r[1] for r in db.execute("PRAGMA table_info(checks)")}
     if "vtex_published" not in cols:
         db.execute("ALTER TABLE checks ADD COLUMN vtex_published INTEGER")
+    scols = {r[1] for r in db.execute("PRAGMA table_info(skus)")}
+    for col, typ in (("venta", "REAL"), ("unidades", "INTEGER")):
+        if col not in scols:
+            db.execute(f"ALTER TABLE skus ADD COLUMN {col} {typ}")
+
+
+def _num(x) -> "float | None":
+    try:
+        return float(str(x).replace(",", ""))
+    except (TypeError, ValueError):
+        return None
 
 
 def _track(seller: str) -> str:
@@ -98,20 +111,40 @@ class TopVentas:
                 sku = (row.get("ID_SKU") or "").strip()
                 if not sku:
                     continue
+                venta = _num(row.get("Venta S/"))
+                unidades = _num(row.get("Unidades"))
                 db.execute(
-                    "INSERT OR IGNORE INTO skus(sku, rank, name, seller, track) "
-                    "VALUES (?,?,?,?,?)",
+                    """INSERT INTO skus(sku, rank, name, seller, track, venta, unidades)
+                       VALUES (?,?,?,?,?,?,?)
+                       ON CONFLICT(sku) DO UPDATE SET
+                           venta=excluded.venta, unidades=excluded.unidades""",
                     (sku, int(row.get("#") or 0), row.get("Producto"),
-                     row.get("Seller"), _track(row.get("Seller"))),
+                     row.get("Seller"), _track(row.get("Seller")),
+                     venta, int(unidades) if unidades is not None else None),
                 )
                 n += 1
         db.commit()
         return n
 
     # -- selección de muestra ---------------------------------------------
-    def _pick_sample(self, db: sqlite3.Connection) -> list[sqlite3.Row]:
+    def _pick_sample(
+        self, db: sqlite3.Connection,
+        track: "str | None" = None, all_pending: bool = False,
+    ) -> list[sqlite3.Row]:
+        if all_pending:
+            # barrido completo: TODOS los nunca verificados (de la pista, o de todas),
+            # por rank (los que más venden primero, para tener el % útil cuanto antes)
+            cond = "AND s.track=?" if track else ""
+            params = (track,) if track else ()
+            return db.execute(
+                f"""SELECT s.*, NULL AS last_check FROM skus s
+                    WHERE NOT EXISTS (SELECT 1 FROM checks c WHERE c.sku = s.sku) {cond}
+                    ORDER BY s.rank""",
+                params,
+            ).fetchall()
         picked: list[sqlite3.Row] = []
-        for track, size in self.samples.items():
+        samples = {track: self.samples.get(track, 100)} if track else self.samples
+        for track, size in samples.items():
             rows = db.execute(
                 """SELECT s.*, MAX(c.checked_at) AS last_check
                    FROM skus s LEFT JOIN checks c ON c.sku = s.sku
@@ -197,14 +230,16 @@ class TopVentas:
         return result
 
     # -- corrida ------------------------------------------------------------
-    async def run(self) -> None:
+    async def run(self, track: "str | None" = None, all_pending: bool = False) -> None:
         db = sqlite3.connect(self.db_path)
         db.row_factory = sqlite3.Row
         db.executescript(_SCHEMA)
         _migrate(db)
         total = self._load_skus(db)
-        sample = self._pick_sample(db)
-        print(f"[topventas] listado: {total} SKUs · muestra de esta corrida: {len(sample)}")
+        sample = self._pick_sample(db, track=track, all_pending=all_pending)
+        modo = "barrido completo" if all_pending else "muestra"
+        print(f"[topventas] listado: {total} SKUs · {modo}"
+              f"{' (' + track + ')' if track else ''} de esta corrida: {len(sample)}")
 
         async with HttpClient(self.cfg) as http:
             http.cache_enabled = False
@@ -352,22 +387,37 @@ class TopVentas:
             LAST + """
             SELECT s.track, COUNT(DISTINCT s.sku) total, COUNT(DISTINCT l.sku) verified,
                    SUM(CASE WHEN l.published=1 THEN 1 ELSE 0 END) pub,
-                   SUM(CASE WHEN l.published=1 AND l.in_stock=0 THEN 1 ELSE 0 END) ns
+                   SUM(CASE WHEN l.published=1 AND l.in_stock=0 THEN 1 ELSE 0 END) ns,
+                   SUM(s.venta) venta_total,
+                   SUM(CASE WHEN l.sku IS NOT NULL THEN s.venta ELSE 0 END) venta_ver,
+                   SUM(CASE WHEN l.published=1 THEN s.venta ELSE 0 END) venta_pub,
+                   SUM(CASE WHEN l.published=0 AND (l.vtex_published IS NULL
+                       OR l.vtex_published=1) THEN s.venta ELSE 0 END) venta_falta,
+                   SUM(CASE WHEN l.vtex_published=0 THEN s.venta ELSE 0 END) venta_novtex
             FROM skus s LEFT JOIN last l ON l.sku=s.sku AND l.rn=1
             GROUP BY s.track"""
         ):
             ver = r["verified"] or 0
+            vv, vp = r["venta_ver"] or 0, r["venta_pub"] or 0
             tracks.append({
+                "key": r["track"],
                 "label": labels.get(r["track"], r["track"]),
                 "total": r["total"], "verified": ver,
                 "cov_pct": round(ver / r["total"] * 100, 1) if r["total"] else 0,
                 "pub_pct": round((r["pub"] or 0) / ver * 100, 1) if ver else 0,
                 "no_stock": r["ns"] or 0,
+                # dimensión PLATA (Venta S/ 6 meses del listado)
+                "venta_total": r["venta_total"] or 0,
+                "venta_ver": vv,
+                "venta_cov_pct": round(vv / r["venta_total"] * 100, 1) if r["venta_total"] else 0,
+                "venta_pub_pct": round(vp / vv * 100, 1) if vv else 0,
+                "venta_falta": r["venta_falta"] or 0,
+                "venta_novtex": r["venta_novtex"] or 0,
             })
         # FALTANTE real = está en VTEX (o aún sin verificar VTEX) y no en CoRD
         missing = [dict(x) for x in db.execute(
             LAST + """
-            SELECT s.rank, s.sku, s.name, s.seller, s.track, l.checked_at
+            SELECT s.rank, s.sku, s.name, s.seller, s.track, s.venta, l.checked_at
             FROM skus s JOIN last l ON l.sku=s.sku AND l.rn=1
             WHERE l.published=0 AND (l.vtex_published IS NULL OR l.vtex_published=1)
             ORDER BY s.rank"""
