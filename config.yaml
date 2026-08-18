@@ -118,6 +118,13 @@ goals:
   stock: 98
   category_count: 95   # % de categorías cuyo conteo de productos coincide (CoRD == VTEX-Oechsle)
 
+# Top Ventas (proceso solo local; el listado de ventas nunca se sube)
+topventas:
+  # sellers excluidos del análisis (por substring, case-insensitive):
+  # sus SKUs no cuentan ni en la base ni en faltantes
+  exclude_sellers:
+    - "promart"
+
 scheduler:
   default_max_runtime_min: 30   # presupuesto de tiempo por corrida diaria
 

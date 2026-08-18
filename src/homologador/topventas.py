@@ -98,6 +98,13 @@ class TopVentas:
         self.samples = cfg.get("topventas.sample") or {
             "oechsle": 100, "plazavea": 40, "marketplace": 60,
         }
+        self.exclude_sellers = [
+            s.lower() for s in (cfg.get("topventas.exclude_sellers") or [])
+        ]
+
+    def _excluded(self, seller: str) -> bool:
+        s = (seller or "").lower()
+        return any(x in s for x in self.exclude_sellers)
 
     # -- carga del listado -------------------------------------------------
     def _load_skus(self, db: sqlite3.Connection) -> int:
@@ -113,13 +120,16 @@ class TopVentas:
                     continue
                 venta = _num(row.get("Venta S/"))
                 unidades = _num(row.get("Unidades"))
+                seller = row.get("Seller")
+                track = "excluido" if self._excluded(seller) else _track(seller)
                 db.execute(
                     """INSERT INTO skus(sku, rank, name, seller, track, venta, unidades)
                        VALUES (?,?,?,?,?,?,?)
                        ON CONFLICT(sku) DO UPDATE SET
-                           venta=excluded.venta, unidades=excluded.unidades""",
+                           venta=excluded.venta, unidades=excluded.unidades,
+                           track=excluded.track""",
                     (sku, int(row.get("#") or 0), row.get("Producto"),
-                     row.get("Seller"), _track(row.get("Seller")),
+                     seller, track,
                      venta, int(unidades) if unidades is not None else None),
                 )
                 n += 1
@@ -135,7 +145,7 @@ class TopVentas:
         if recheck_missing:
             # re-verificar los FALTANTES actuales (para depurar falsos positivos
             # causados por errores de API durante barridos masivos)
-            cond = "AND s.track=?" if track else ""
+            cond = "AND s.track=?" if track else "AND s.track != 'excluido'"
             params = (track,) if track else ()
             return db.execute(
                 f"""WITH last AS (SELECT c.*, ROW_NUMBER() OVER
@@ -150,7 +160,7 @@ class TopVentas:
         if all_pending:
             # barrido completo: TODOS los nunca verificados (de la pista, o de todas),
             # por rank (los que más venden primero, para tener el % útil cuanto antes)
-            cond = "AND s.track=?" if track else ""
+            cond = "AND s.track=?" if track else "AND s.track != 'excluido'"
             params = (track,) if track else ()
             return db.execute(
                 f"""SELECT s.*, NULL AS last_check FROM skus s
@@ -322,6 +332,7 @@ class TopVentas:
                       SUM(CASE WHEN l.published=1 THEN 1 ELSE 0 END) publicados,
                       SUM(CASE WHEN l.published=1 AND l.in_stock=0 THEN 1 ELSE 0 END) sin_stock
                FROM skus s LEFT JOIN last l ON l.sku=s.sku AND l.rn=1
+               WHERE s.track != 'excluido'
                GROUP BY s.track"""
         ):
             pub = r["publicados"] or 0
@@ -350,7 +361,8 @@ class TopVentas:
                 (PARTITION BY sku ORDER BY checked_at DESC) rn FROM checks c)
             SELECT s.sku, s.rank, s.name, s.track, l.cord_url
             FROM skus s JOIN last l ON l.sku=s.sku AND l.rn=1
-            WHERE l.published=1 AND l.cord_url IS NOT NULL ORDER BY s.rank""").fetchall()
+            WHERE l.published=1 AND l.cord_url IS NOT NULL
+              AND s.track != 'excluido' ORDER BY s.rank""").fetchall()
         print(f"[topventas:datos] validando datos de {len(rows)} top publicados...")
 
         agg = collections.defaultdict(lambda: collections.defaultdict(lambda: [0, 0]))
@@ -442,6 +454,7 @@ class TopVentas:
                        OR l.vtex_published=1) THEN s.venta ELSE 0 END) venta_falta,
                    SUM(CASE WHEN l.vtex_published=0 THEN s.venta ELSE 0 END) venta_novtex
             FROM skus s LEFT JOIN last l ON l.sku=s.sku AND l.rn=1
+            WHERE s.track != 'excluido'
             GROUP BY s.track"""
         ):
             ver = r["verified"] or 0
@@ -471,6 +484,7 @@ class TopVentas:
             SELECT s.rank, s.sku, s.name, s.seller, s.track, s.venta, l.checked_at
             FROM skus s JOIN last l ON l.sku=s.sku AND l.rn=1
             WHERE l.published=0 AND (l.vtex_published IS NULL OR l.vtex_published=1)
+              AND s.track != 'excluido'
             ORDER BY s.rank"""
         )]
         # no está en VTEX (temporada/descontinuado): informativo, NO es error
@@ -479,21 +493,23 @@ class TopVentas:
             SELECT s.rank, s.sku, s.name, s.seller, s.track,
                    l.published AS cord_published
             FROM skus s JOIN last l ON l.sku=s.sku AND l.rn=1
-            WHERE l.vtex_published=0 ORDER BY s.rank"""
+            WHERE l.vtex_published=0 AND s.track != 'excluido' ORDER BY s.rank"""
         )]
         no_stock = [dict(x) for x in db.execute(
             LAST + """
             SELECT s.rank, s.sku, s.name, l.found_seller, l.cord_url
             FROM skus s JOIN last l ON l.sku=s.sku AND l.rn=1
-            WHERE l.published=1 AND l.in_stock=0 ORDER BY s.rank"""
+            WHERE l.published=1 AND l.in_stock=0 AND s.track != 'excluido'
+            ORDER BY s.rank"""
         )]
         published = [dict(x) for x in db.execute(
             LAST + """
             SELECT s.rank, s.sku, s.name, s.track, l.found_seller, l.in_stock, l.cord_url
             FROM skus s JOIN last l ON l.sku=s.sku AND l.rn=1
-            WHERE l.published=1 ORDER BY s.rank"""
+            WHERE l.published=1 AND s.track != 'excluido' ORDER BY s.rank"""
         )]
-        total_skus = db.execute("SELECT COUNT(*) FROM skus").fetchone()[0]
+        total_skus = db.execute(
+            "SELECT COUNT(*) FROM skus WHERE track != 'excluido'").fetchone()[0]
         # sección de calidad de datos (si se corrió --datos)
         datos = None
         try:
