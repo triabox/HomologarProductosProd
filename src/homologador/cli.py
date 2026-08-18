@@ -200,6 +200,8 @@ def main(argv: list[str] | None = None) -> int:
                       help="limitar a una pista")
     p_tv.add_argument("--all", action="store_true", dest="all_pending",
                       help="barrido completo: verificar TODOS los SKUs nunca verificados")
+    p_tv.add_argument("--missing", action="store_true", dest="recheck_missing",
+                      help="re-verificar los faltantes actuales (depura falsos positivos)")
 
     p_srv = sub.add_parser("serve", help="servir el dashboard con corridas a demanda")
     p_srv.add_argument("--port", type=int, default=int(__import__("os").environ.get("PORT", 8080)))
@@ -225,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(tv.run(
             track=getattr(args, "track", None),
             all_pending=getattr(args, "all_pending", False),
+            recheck_missing=getattr(args, "recheck_missing", False),
         )) or 0
     if args.cmd == "serve":
         from .webserver import main as serve_main

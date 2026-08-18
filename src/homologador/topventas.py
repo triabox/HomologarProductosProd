@@ -130,7 +130,23 @@ class TopVentas:
     def _pick_sample(
         self, db: sqlite3.Connection,
         track: "str | None" = None, all_pending: bool = False,
+        recheck_missing: bool = False,
     ) -> list[sqlite3.Row]:
+        if recheck_missing:
+            # re-verificar los FALTANTES actuales (para depurar falsos positivos
+            # causados por errores de API durante barridos masivos)
+            cond = "AND s.track=?" if track else ""
+            params = (track,) if track else ()
+            return db.execute(
+                f"""WITH last AS (SELECT c.*, ROW_NUMBER() OVER
+                        (PARTITION BY c.sku ORDER BY c.checked_at DESC) rn FROM checks c)
+                    SELECT s.*, l.checked_at AS last_check
+                    FROM skus s JOIN last l ON l.sku=s.sku AND l.rn=1
+                    WHERE l.published=0
+                      AND (l.vtex_published IS NULL OR l.vtex_published=1) {cond}
+                    ORDER BY s.venta DESC""",
+                params,
+            ).fetchall()
         if all_pending:
             # barrido completo: TODOS los nunca verificados (de la pista, o de todas),
             # por rank (los que más venden primero, para tener el % útil cuanto antes)
@@ -164,10 +180,14 @@ class TopVentas:
         return picked
 
     # -- verificación de un SKU -------------------------------------------
-    async def _vtex_published(self, api: CordApi, sku: str) -> int:
-        """¿El SKU está publicado HOY en VTEX? (productos de temporada salen del catálogo)."""
+    async def _vtex_published(self, api: CordApi, sku: str) -> "int | None":
+        """¿El SKU está publicado HOY en VTEX? (productos de temporada salen del catálogo).
+
+        None = inconcluso (las requests fallaron): no confundir con "no está".
+        """
         import json as _json
         base = self.cfg.get("vtex.base_url").rstrip("/")
+        got_answer = False
         for field in ("skuId", "productId"):
             text = await api.http.get_text(
                 f"{base}/api/catalog_system/pub/products/search?fq={field}:{sku}"
@@ -176,9 +196,10 @@ class TopVentas:
                 try:
                     if _json.loads(text):
                         return 1
+                    got_answer = True  # respuesta válida vacía: no está por este campo
                 except _json.JSONDecodeError:
                     pass
-        return 0
+        return 0 if got_answer else None
 
     async def _check(self, api: CordApi, row: sqlite3.Row) -> dict:
         sku, name, track = row["sku"], row["name"] or "", row["track"]
@@ -188,9 +209,16 @@ class TopVentas:
         # 1º: ¿sigue publicado en VTEX? (si no, no cuenta como faltante de CoRD)
         result["vtex_published"] = await self._vtex_published(api, sku)
 
+        api_failed = False
+
         async def search(q: str, size: int = 8):
+            nonlocal api_failed
             data = await api._get(f"/search/v3/products?q={q}&size={size}")
-            return (data or {}).get("items") or []
+            if data is None:
+                # error/rate-limit de la API: NO es lo mismo que "sin resultados"
+                api_failed = True
+                return []
+            return data.get("items") or []
 
         candidates = []
         if track == "oechsle":
@@ -199,6 +227,11 @@ class TopVentas:
             words = "%20".join(norm_text(name).split()[:8])
             if words:
                 candidates = await search(words)
+        if not candidates and api_failed:
+            # sin candidatos pero con fallos de API: inconcluso, no registrar
+            # (el SKU queda pendiente y se reintenta en la próxima corrida)
+            result["published"] = None
+            return result
 
         best, best_score = None, -1
         for it in candidates:
@@ -230,14 +263,17 @@ class TopVentas:
         return result
 
     # -- corrida ------------------------------------------------------------
-    async def run(self, track: "str | None" = None, all_pending: bool = False) -> None:
+    async def run(self, track: "str | None" = None, all_pending: bool = False,
+                  recheck_missing: bool = False) -> None:
         db = sqlite3.connect(self.db_path)
         db.row_factory = sqlite3.Row
         db.executescript(_SCHEMA)
         _migrate(db)
         total = self._load_skus(db)
-        sample = self._pick_sample(db, track=track, all_pending=all_pending)
-        modo = "barrido completo" if all_pending else "muestra"
+        sample = self._pick_sample(db, track=track, all_pending=all_pending,
+                                   recheck_missing=recheck_missing)
+        modo = ("re-verificación de faltantes" if recheck_missing
+                else "barrido completo" if all_pending else "muestra")
         print(f"[topventas] listado: {total} SKUs · {modo}"
               f"{' (' + track + ')' if track else ''} de esta corrida: {len(sample)}")
 
@@ -247,11 +283,15 @@ class TopVentas:
             now = time.strftime("%Y-%m-%dT%H:%M:%S")
             CHUNK = 12
             done = 0
+            inconclusos = 0
             for i in range(0, len(sample), CHUNK):
                 results = await asyncio.gather(
                     *(self._check(api, r) for r in sample[i:i + CHUNK])
                 )
                 for r in results:
+                    if r["published"] is None:
+                        inconclusos += 1  # error de API: queda pendiente, no se registra
+                        continue
                     db.execute(
                         "INSERT INTO checks(sku, checked_at, published, in_stock, "
                         "found_name, found_seller, cord_url, vtex_published) "
@@ -264,6 +304,9 @@ class TopVentas:
                 done += len(results)
                 if done % 60 == 0:
                     print(f"[topventas]   {done}/{len(sample)} verificados")
+            if inconclusos:
+                print(f"[topventas] {inconclusos} chequeos inconclusos por errores de API "
+                      f"(quedan pendientes para reintentar)")
 
         self.render_report(db)
         # resumen por pista (última verificación de cada SKU)
