@@ -448,28 +448,34 @@ class Storage:
         ).fetchall()
 
     def failing_items(self, run_id: int, field: str, limit: int = 50) -> list[sqlite3.Row]:
-        """Productos que fallan en un campo, priorizados por menor score (peor primero)."""
+        """Productos que fallan en un campo, priorizados por menor score (peor primero).
+
+        Un SKU aparece una sola vez aunque la corrida lo haya comparado más de una
+        vez (ciclos re-visitando categorías chicas en corridas viejas).
+        """
         return self.conn.execute(
             """SELECT fr.sku, pr.category_name, fr.cord_value, fr.vtex_value,
-                      fr.detail, fr.score, pr.cord_url, pr.vtex_url
+                      fr.detail, MIN(fr.score) AS score, pr.cord_url, pr.vtex_url
                FROM field_results fr
                JOIN product_results pr ON pr.run_id=fr.run_id AND pr.sku=fr.sku
                WHERE fr.run_id=? AND fr.field=? AND fr.ok=0
-               ORDER BY fr.score ASC
+               GROUP BY fr.sku
+               ORDER BY score ASC
                LIMIT ?""",
             (run_id, field, limit),
         ).fetchall()
 
     def failing_count(self, run_id: int, field: str) -> int:
         return self.conn.execute(
-            "SELECT COUNT(*) n FROM field_results WHERE run_id=? AND field=? AND ok=0",
+            "SELECT COUNT(DISTINCT sku) n FROM field_results "
+            "WHERE run_id=? AND field=? AND ok=0",
             (run_id, field),
         ).fetchone()["n"]
 
     def field_comparables(self, run_id: int, field: str) -> int:
-        """Cantidad de resultados comparables (excluye NO_APLICA) de un campo."""
+        """Cantidad de SKUs comparables (excluye NO_APLICA) de un campo."""
         return self.conn.execute(
-            "SELECT COUNT(*) n FROM field_results "
+            "SELECT COUNT(DISTINCT sku) n FROM field_results "
             "WHERE run_id=? AND field=? AND severity != 'NO_APLICA'",
             (run_id, field),
         ).fetchone()["n"]

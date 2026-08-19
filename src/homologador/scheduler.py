@@ -155,6 +155,8 @@ class Runner:
             score_sum = 0.0
             cats_done = 0
             hit_deadline = False
+            seen_skus: set[str] = set()  # no re-comparar el mismo SKU en la corrida
+                                         # (ciclos re-visitan categorías chicas)
 
             while categories:
               offsets = storage.sample_offsets()  # offset de rotación por categoría
@@ -166,7 +168,7 @@ class Runner:
 
                 offset = offsets.get(cat.id, 0)
                 comps, total_found, cord_count, vtex_count = await self._process_category(
-                    cat, discovery, scraper, vtex, storage, run_id, offset
+                    cat, discovery, scraper, vtex, storage, run_id, offset, seen_skus
                 )
                 next_off = self.sampler.next_offset(offset, total_found)
                 if not comps:
@@ -295,6 +297,7 @@ class Runner:
         storage: Storage,
         run_id: int,
         offset: int = 0,
+        seen_skus: "set[str] | None" = None,
     ) -> tuple[list[ProductComparison], int, "int | None", "int | None"]:
         discovered, cord_total, ssr_sellers = await discovery.discover_category(cat)
         vtex_count = await self._vtex_category_count(vtex, cat)
@@ -304,6 +307,11 @@ class Runner:
         if not mine:
             return [], 0, cord_count, vtex_count
         sample = self.sampler.sample(mine, offset)
+        if seen_skus is not None:
+            sample = [dp for dp in sample if dp.sku not in seen_skus]
+            if not sample:
+                return [], len(mine), cord_count, vtex_count
+            seen_skus.update(dp.sku for dp in sample)
 
         async def one(dp: DiscoveredProduct) -> ProductComparison:
             try:
